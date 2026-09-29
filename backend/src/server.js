@@ -1,9 +1,12 @@
 'use strict';
 
-// APItracker backend: JSON API only. The dashboard is the separate frontend
+// APItracker backend: the JSON API. The dashboard is the separate frontend
 // project, whose server forwards /api here (or the browser calls it directly
 // when the frontend's API_URL is set and its address is in CORS_ORIGINS).
+// When the frontend sits next to it (SERVE_FRONTEND, default on) the backend
+// also serves the dashboard at /, so a server needs only this process.
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const { settings } = require('./config');
@@ -12,11 +15,12 @@ const { Runner } = require('./runner');
 const { evaluate } = require('./evaluate');
 const incidents = require('./incidents');
 
-const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 const isLoopbackAddr = (a) => a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 
-if (!LOOPBACK_HOSTS.includes(settings.host) && !settings.token) {
-  console.error(`Refusing to listen on ${settings.host} without TRACKER_TOKEN: the dashboard describes every key.`);
+// Behind nginx the host is 127.0.0.1 yet every visitor gets through, so the
+// key is required wherever it runs.
+if (!settings.token) {
+  console.error('Refusing to start without TRACKER_TOKEN in backend/.env: the dashboard describes every key.');
   process.exit(1);
 }
 
@@ -196,10 +200,23 @@ app.put('/api/meta/:id', (req, res) => {
   res.json(overview());
 });
 
+const frontendIndex = path.join(settings.frontendDir, 'index.html');
+const servesFrontend = settings.serveFrontend && fs.existsSync(frontendIndex);
+if (servesFrontend) {
+  // Same address as the API, so the page always calls its own /api.
+  app.get('/config.js', (req, res) => {
+    res.type('text/javascript').set('Cache-Control', 'no-store').send('window.APITRACKER_CONFIG = {"apiUrl":""};\n');
+  });
+  app.use(express.static(settings.frontendDir, { index: 'index.html', setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
+  app.get(/^(?!\/api(\/|$)).*/, (req, res) => res.set('Cache-Control', 'no-store').sendFile(frontendIndex));
+}
+
 app.use((req, res) => res.status(404).json({ error: 'Not found. This is the APItracker API; open the frontend for the dashboard.' }));
 
 app.listen(settings.port, settings.host, () => {
   console.log(`APItracker backend (API) on http://${settings.host === '0.0.0.0' ? 'localhost' : settings.host}:${settings.port}/api`);
+  console.log(servesFrontend ? `Dashboard also served at / from ${settings.frontendDir}` : 'Dashboard not served here (SERVE_FRONTEND=false or frontend/src missing).');
+  console.log(settings.trustLocalhost ? 'TRUST_LOCALHOST=true: this computer skips the access key (laptop only; set false on a server).' : 'Access key required for every request.');
   console.log(`Watching keys in ${settings.watchEnvFile}; checks every ${settings.intervalMinutes} min`);
   console.log(settings.corsOrigins.length ? `Browsers may call it directly from: ${settings.corsOrigins.join(', ')}` : 'No CORS origins: browsers reach it only through the frontend server.');
   if (process.env.NO_SCHEDULE !== 'true') runner.start();

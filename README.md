@@ -50,12 +50,37 @@ x-tracker-key: <TRACKER_TOKEN>
 { "service": "openai", "message": "429 during scan", "level": "warn", "detail": "…" }
 ```
 
+## Deploy (apitracker.mrpscan.com)
+
+The backend also serves the dashboard at `/` (`SERVE_FRONTEND=true`), so the server runs one process. It needs Node 18+, PM2 and nginx.
+
+```bash
+git clone https://github.com/imshus/APItracker.git
+cd APItracker/backend
+npm ci --omit=dev
+cp .env.example .env
+nano .env
+pm2 start src/server.js --name apitracker
+pm2 save
+sudo cp ../deploy/apitracker.conf /etc/nginx/conf.d/apitracker.conf
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d apitracker.mrpscan.com
+```
+
+In `backend/.env` on the server:
+- `TRACKER_TOKEN` = a new long random key (`node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`). The backend will not start without it.
+- `TRUST_LOCALHOST=false` (behind nginx every visitor arrives from 127.0.0.1).
+- `TRACKER_HOST=127.0.0.1`, `TRACKER_PORT=4310` (nginx proxies to it).
+- The keys: paste them below the settings, or set `WATCH_ENV_FILE=/path/to/mrpscan/backend/.env` to read the MRPscan backend's own .env (re-read every run, so rotated keys show up without a restart).
+
+Update later: `git pull && pm2 restart apitracker`.
+
 ## Phone app (APK)
 
 `APItracker.apk` (source in `android/`) opens the frontend's dashboard. It holds no API keys; the first time it asks for the `TRACKER_TOKEN` access key.
 
-- Default address = this laptop's Wi-Fi address at build time (`http://192.168.0.114:4300`). **Server** (top of the dashboard) or the connect screen changes it.
-- The frontend listens on the Wi-Fi (`FRONTEND_HOST=0.0.0.0`); allow Node through the Windows firewall the first time. The backend stays on 127.0.0.1 and asks the phone for the key. Or host it behind https and enter that address.
+- Default address = `http://apitracker.mrpscan.com` (nginx redirects to https once certbot has run). **Server** (top of the dashboard) or the connect screen changes it.
+- Laptop on the same Wi-Fi instead: enter `http://<laptop IP>:4300` (the frontend listens on the Wi-Fi; allow Node through the Windows firewall).
 - Rebuild: `cd android` → `gradlew assembleRelease` with `JAVA_HOME` = Android Studio's `jbr`. `android/.env` `SERVER_URL` bakes a different default. Signing key: `android/app/keystore/apitracker.jks` + `android/keystore.properties` — back them up; every update must be signed with the same key.
 
 ## Settings

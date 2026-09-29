@@ -29,6 +29,8 @@ const settings = {
   memoryWarnPct: num(process.env.MEMORY_WARN_PCT, 85),
   mongoLimitMb: num(process.env.MONGO_STORAGE_LIMIT_MB, 0),
   trackUrls: list(process.env.TRACK_URLS),
+  serveFrontend: String(process.env.SERVE_FRONTEND ?? 'true').toLowerCase() !== 'false',
+  frontendDir: path.resolve(ROOT, process.env.FRONTEND_DIR || '../frontend/src'),
   watchEnvFile: process.env.WATCH_ENV_FILE ? path.resolve(ROOT, process.env.WATCH_ENV_FILE) : OWN_ENV,
   dataFile: process.env.DATA_FILE ? path.resolve(ROOT, process.env.DATA_FILE) : path.join(ROOT, 'data', 'state.json'),
   // Fetched before every run: when this fails the tracker itself is offline
