@@ -5,6 +5,7 @@
 // when the frontend's API_URL is set and its address is in CORS_ORIGINS).
 // When the frontend sits next to it (SERVE_FRONTEND, default on) the backend
 // also serves the dashboard at /, so a server needs only this process.
+// No sign-in of any kind: whoever can open the address sees the dashboard.
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
@@ -13,12 +14,12 @@ const { Store } = require('./store');
 const { Runner } = require('./runner');
 const { evaluate } = require('./evaluate');
 const incidents = require('./incidents');
-const { createAuth } = require('./auth');
 
 const store = new Store(settings.dataFile);
 const runner = new Runner(store, settings);
-const auth = createAuth(settings);
-const { originAllowed } = auth;
+
+const originAllowed = (origin) => Boolean(origin)
+  && (settings.corsOrigins.includes('*') || settings.corsOrigins.includes(origin.replace(/\/+$/, '')));
 
 function uptime(history, now) {
   const week = history.filter((h) => now - Date.parse(h.t) <= 7 * 24 * 3600 * 1000 && h.s !== 'off');
@@ -77,9 +78,8 @@ app.use((req, res, next) => {
   if (originAllowed(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, x-tracker-password');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-    res.set('Access-Control-Allow-Credentials', 'true');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(originAllowed(origin) ? 204 : 403);
   return next();
@@ -87,10 +87,6 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '64kb' }));
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
-app.get('/api/session', auth.session);
-app.post('/api/login', auth.login);
-app.post('/api/logout', auth.logout);
-app.use('/api', auth.requireAuth);
 
 app.get('/api/overview', (req, res) => res.json(overview()));
 
@@ -182,8 +178,6 @@ app.use((req, res) => res.status(404).json({ error: 'Not found. This is the APIt
 app.listen(settings.port, settings.host, () => {
   console.log(`APItracker backend (API) on http://${settings.host === '0.0.0.0' ? 'localhost' : settings.host}:${settings.port}/api`);
   console.log(servesFrontend ? `Dashboard also served at / from ${settings.frontendDir}` : 'Dashboard not served here (SERVE_FRONTEND=false or frontend/src missing).');
-  if (auth.open) console.log('Open access: no TRACKER_PASSWORD, anyone who can reach this address sees the dashboard.');
-  else console.log(settings.trustLocalhost ? 'Password on; TRUST_LOCALHOST=true lets this computer skip it (laptop only).' : 'Password required for every visitor.');
   console.log(`Watching keys in ${settings.watchEnvFile}; checks every ${settings.intervalMinutes} min`);
   console.log(settings.corsOrigins.length ? `Browsers may call it directly from: ${settings.corsOrigins.join(', ')}` : 'No CORS origins: browsers reach it only through the frontend server.');
   if (process.env.NO_SCHEDULE !== 'true') runner.start();

@@ -67,8 +67,6 @@ sudo certbot --nginx -d apitracker.mrpscan.com
 ```
 
 In `backend/.env` on the server:
-- `TRACKER_PASSWORD` empty = open access (no sign-in). Set one to require sign-in.
-- `TRUST_LOCALHOST=false` (behind nginx every visitor arrives from 127.0.0.1).
 - `TRACKER_HOST=127.0.0.1`, `TRACKER_PORT=4310` (nginx proxies to it).
 - The keys: paste them below the settings, or set `WATCH_ENV_FILE=/path/to/mrpscan/backend/.env` to read the MRPscan backend's own .env (re-read every run, so rotated keys show up without a restart).
 
@@ -86,7 +84,7 @@ Update later: `git pull && pm2 restart apitracker`.
 
 `backend/.env` (copy `backend/.env.example`):
 - `TRACKER_PORT` (4310), `TRACKER_HOST` (127.0.0.1 = only the frontend server on this machine reaches it)
-- `TRACKER_PASSWORD` empty (default) = open access: no sign-in, anyone with the URL sees the dashboard. Set it to require sign-in (cookie for 30 days, 10 wrong tries per 15 min per address; scripts send `x-tracker-password`). With a password, `TRUST_LOCALHOST=true` lets this laptop skip it; keep `false` on a server.
+- No sign-in: anyone who can open the address sees the dashboard (keys are only ever shown masked).
 - Manual **Check** skips a service checked in the last 30 s, so clicks cannot hammer the providers.
 - `CORS_ORIGINS` dashboards allowed to call the backend straight from the browser (only needed with frontend `API_URL`)
 - `WATCH_ENV_FILE` read keys from another .env (e.g. the MRPscan backend's) — re-read every run

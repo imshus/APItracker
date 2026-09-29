@@ -19,20 +19,13 @@ function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Sign-in lives in an HttpOnly cookie set by /api/login; the page never
-// stores the password.
 async function api(path, options = {}) {
   // Empty apiUrl = same address; the frontend server forwards /api to the backend.
   const base = (window.APITRACKER_CONFIG && window.APITRACKER_CONFIG.apiUrl) || '';
   const res = await fetch(`${base}/api${path}`, {
     ...options,
-    credentials: base ? 'include' : 'same-origin',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  if (res.status === 401 && path !== '/login') {
-    askToSignIn();
-    throw new Error('unauthorized');
-  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
@@ -326,11 +319,9 @@ async function refresh() {
     render();
     if (state.tab === 'issues') await loadIssues();
   } catch (err) {
-    if (err.message !== 'unauthorized') {
-      const banner = $('#banner');
-      banner.hidden = false;
-      banner.textContent = `Cannot reach the tracker: ${err.message}`;
-    }
+    const banner = $('#banner');
+    banner.hidden = false;
+    banner.textContent = `Cannot reach the tracker: ${err.message}`;
   }
   schedule();
 }
@@ -345,41 +336,8 @@ async function runCheck(ids) {
   try {
     state.data = await api('/check', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) });
     render();
-  } catch { /* sign-in dialog or banner */ }
+  } catch { /* banner on the next refresh */ }
   schedule();
-}
-
-function askToSignIn() {
-  const dlg = $('#loginDialog');
-  $('#logoutBtn').hidden = true;
-  if (!dlg.open) {
-    $('#loginError').hidden = true;
-    dlg.showModal();
-    $('#loginForm').password.focus();
-  }
-}
-
-async function signIn(password) {
-  const err = $('#loginError');
-  try {
-    await api('/login', { method: 'POST', body: JSON.stringify({ password }) });
-    $('#loginDialog').close();
-    $('#loginForm').reset();
-    await showSessionButtons();
-    refresh();
-  } catch (e) {
-    err.textContent = e.message;
-    err.hidden = false;
-  }
-}
-
-// "Sign out" only when a password is set and this is a real session (not open
-// access, not a trusted laptop).
-async function showSessionButtons() {
-  try {
-    const s = await api('/session');
-    $('#logoutBtn').hidden = !(s.signedIn && !s.local && !s.open);
-  } catch { /* shown on next sign-in */ }
 }
 
 function openMeta(id) {
@@ -460,19 +418,7 @@ if (window.APITrackerShell) {
 $('#metaForm').addEventListener('submit', (e) => { e.preventDefault(); saveMeta(false); });
 $('#metaClear').addEventListener('click', () => saveMeta(true));
 $('#metaCancel').addEventListener('click', () => $('#metaDialog').close());
-$('#loginForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  signIn(e.target.password.value);
-});
-// The dashboard is empty without a session, so Esc must not close sign-in.
-$('#loginDialog').addEventListener('cancel', (e) => e.preventDefault());
-$('#logoutBtn').addEventListener('click', async () => {
-  try { await api('/logout', { method: 'POST', body: '{}' }); } catch { /* signing in again shows anyway */ }
-  state.data = null;
-  askToSignIn();
-});
 
 // Old builds kept an access key here; it is no longer used.
 try { localStorage.removeItem('apitracker-key'); } catch { /* private mode */ }
-showSessionButtons();
 refresh();

@@ -19,8 +19,6 @@ const settings = {
   port: num(process.env.TRACKER_PORT, 4310),
   host: process.env.TRACKER_HOST || '127.0.0.1',
   corsOrigins: list(process.env.CORS_ORIGINS ?? 'http://localhost:4300,http://127.0.0.1:4300').map((o) => o.replace(/\/+$/, '')),
-  password: process.env.TRACKER_PASSWORD || '',
-  trustLocalhost: String(process.env.TRUST_LOCALHOST).toLowerCase() === 'true',
   intervalMinutes: Math.max(1, num(process.env.CHECK_INTERVAL_MINUTES, 30)),
   expiryWarnDays: num(process.env.EXPIRY_WARN_DAYS, 15),
   slowMs: num(process.env.SLOW_MS, 5000),
