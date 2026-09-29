@@ -21,7 +21,7 @@ const FIXED = [
 function listServices(env, settings) {
   const urls = [];
   if (env.PRATHAM_AI_URL) {
-    urls.push(urlService(env.PRATHAM_AI_URL, { envVar: 'PRATHAM_AI_URL', name: 'Pratham AI', purpose: 'Voice agent the app dials' }));
+    urls.push(urlService(env.PRATHAM_AI_URL, { envVar: 'PRATHAM_AI_URL', name: '24/7', purpose: '24/7 voice agent the app dials' }));
   }
   for (const url of settings.trackUrls) {
     urls.push(urlService(url, { envVar: 'TRACK_URLS' }));

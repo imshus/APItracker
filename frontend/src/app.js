@@ -316,6 +316,12 @@ function renderIssues() {
 async function refresh() {
   try {
     state.data = await api('/overview');
+    // The server was updated since this page loaded: load the new page.
+    const loaded = window.APITRACKER_CONFIG && window.APITRACKER_CONFIG.uiVersion;
+    if (loaded && state.data.uiVersion && state.data.uiVersion !== loaded) {
+      window.location.reload();
+      return;
+    }
     render();
     if (state.tab === 'issues') await loadIssues();
   } catch (err) {

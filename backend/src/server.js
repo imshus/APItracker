@@ -6,6 +6,7 @@
 // When the frontend sits next to it (SERVE_FRONTEND, default on) the backend
 // also serves the dashboard at /, so a server needs only this process.
 // No sign-in of any kind: whoever can open the address sees the dashboard.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
@@ -17,6 +18,18 @@ const incidents = require('./incidents');
 
 const store = new Store(settings.dataFile);
 const runner = new Runner(store, settings);
+
+const frontendIndex = path.join(settings.frontendDir, 'index.html');
+const servesFrontend = settings.serveFrontend && fs.existsSync(frontendIndex);
+// Fingerprint of the dashboard files this process serves. The page gets it in
+// config.js and compares it with every overview, so an open page (the phone
+// app keeps one alive for days) reloads itself after a deploy.
+const uiVersion = servesFrontend
+  ? crypto.createHash('sha1').update(Buffer.concat(fs.readdirSync(settings.frontendDir).sort()
+    .map((f) => path.join(settings.frontendDir, f))
+    .filter((f) => fs.statSync(f).isFile())
+    .map((f) => fs.readFileSync(f)))).digest('hex').slice(0, 12)
+  : null;
 
 const originAllowed = (origin) => Boolean(origin)
   && (settings.corsOrigins.includes('*') || settings.corsOrigins.includes(origin.replace(/\/+$/, '')));
@@ -64,6 +77,7 @@ function overview() {
     watchEnvFile: path.relative(settings.root, settings.watchEnvFile) || settings.watchEnvFile,
     envError: runner.envError,
     openIssues: state.incidents.filter((i) => !i.resolvedAt).length,
+    uiVersion,
     services,
   };
 }
@@ -162,12 +176,11 @@ app.put('/api/meta/:id', (req, res) => {
   res.json(overview());
 });
 
-const frontendIndex = path.join(settings.frontendDir, 'index.html');
-const servesFrontend = settings.serveFrontend && fs.existsSync(frontendIndex);
 if (servesFrontend) {
   // Same address as the API, so the page always calls its own /api.
   app.get('/config.js', (req, res) => {
-    res.type('text/javascript').set('Cache-Control', 'no-store').send('window.APITRACKER_CONFIG = {"apiUrl":""};\n');
+    res.type('text/javascript').set('Cache-Control', 'no-store')
+      .send(`window.APITRACKER_CONFIG = ${JSON.stringify({ apiUrl: '', uiVersion })};\n`);
   });
   app.use(express.static(settings.frontendDir, { index: 'index.html', setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
   app.get(/^(?!\/api(\/|$)).*/, (req, res) => res.set('Cache-Control', 'no-store').sendFile(frontendIndex));
