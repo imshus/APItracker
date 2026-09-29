@@ -1,6 +1,5 @@
 'use strict';
 
-const KEY_STORE = 'apitracker-key';
 const STATUS_LABEL = { ok: 'OK', warn: 'Warning', down: 'Down', off: 'Not set', pending: 'Not checked' };
 
 const state = {
@@ -20,22 +19,18 @@ function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function readKey() {
-  try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
-}
-function saveKey(value) {
-  try { localStorage.setItem(KEY_STORE, value); } catch { /* private mode */ }
-}
-
+// Sign-in lives in an HttpOnly cookie set by /api/login; the page never
+// stores the password.
 async function api(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  const key = readKey();
-  if (key) headers['x-tracker-key'] = key;
   // Empty apiUrl = same address; the frontend server forwards /api to the backend.
   const base = (window.APITRACKER_CONFIG && window.APITRACKER_CONFIG.apiUrl) || '';
-  const res = await fetch(`${base}/api${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } });
-  if (res.status === 401) {
-    askForKey(Boolean(key));
+  const res = await fetch(`${base}/api${path}`, {
+    ...options,
+    credentials: base ? 'include' : 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  if (res.status === 401 && path !== '/login') {
+    askToSignIn();
     throw new Error('unauthorized');
   }
   const body = await res.json().catch(() => ({}));
@@ -350,14 +345,41 @@ async function runCheck(ids) {
   try {
     state.data = await api('/check', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) });
     render();
-  } catch { /* key dialog or banner */ }
+  } catch { /* sign-in dialog or banner */ }
   schedule();
 }
 
-function askForKey(wasWrong) {
-  const dlg = $('#keyDialog');
-  $('#keyError').hidden = !wasWrong;
-  if (!dlg.open) dlg.showModal();
+function askToSignIn() {
+  const dlg = $('#loginDialog');
+  $('#logoutBtn').hidden = true;
+  if (!dlg.open) {
+    $('#loginError').hidden = true;
+    dlg.showModal();
+    $('#loginForm').password.focus();
+  }
+}
+
+async function signIn(password) {
+  const err = $('#loginError');
+  try {
+    await api('/login', { method: 'POST', body: JSON.stringify({ password }) });
+    $('#loginDialog').close();
+    $('#loginForm').reset();
+    await showSessionButtons();
+    refresh();
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+  }
+}
+
+// "Sign out" only when a password is set and this is a real session (not open
+// access, not a trusted laptop).
+async function showSessionButtons() {
+  try {
+    const s = await api('/session');
+    $('#logoutBtn').hidden = !(s.signedIn && !s.local && !s.open);
+  } catch { /* shown on next sign-in */ }
 }
 
 function openMeta(id) {
@@ -438,11 +460,19 @@ if (window.APITrackerShell) {
 $('#metaForm').addEventListener('submit', (e) => { e.preventDefault(); saveMeta(false); });
 $('#metaClear').addEventListener('click', () => saveMeta(true));
 $('#metaCancel').addEventListener('click', () => $('#metaDialog').close());
-$('#keyForm').addEventListener('submit', (e) => {
+$('#loginForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  saveKey(e.target.key.value.trim());
-  $('#keyDialog').close();
-  refresh();
+  signIn(e.target.password.value);
+});
+// The dashboard is empty without a session, so Esc must not close sign-in.
+$('#loginDialog').addEventListener('cancel', (e) => e.preventDefault());
+$('#logoutBtn').addEventListener('click', async () => {
+  try { await api('/logout', { method: 'POST', body: '{}' }); } catch { /* signing in again shows anyway */ }
+  state.data = null;
+  askToSignIn();
 });
 
+// Old builds kept an access key here; it is no longer used.
+try { localStorage.removeItem('apitracker-key'); } catch { /* private mode */ }
+showSessionButtons();
 refresh();

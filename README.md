@@ -46,7 +46,6 @@ Open http://localhost:4300. Checks run on start and every `CHECK_INTERVAL_MINUTE
 
 ```
 POST /api/issues
-x-tracker-key: <TRACKER_TOKEN>
 { "service": "openai", "message": "429 during scan", "level": "warn", "detail": "…" }
 ```
 
@@ -68,7 +67,7 @@ sudo certbot --nginx -d apitracker.mrpscan.com
 ```
 
 In `backend/.env` on the server:
-- `TRACKER_TOKEN` = a new long random key (`node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`). The backend will not start without it.
+- `TRACKER_PASSWORD` empty = open access (no sign-in). Set one to require sign-in.
 - `TRUST_LOCALHOST=false` (behind nginx every visitor arrives from 127.0.0.1).
 - `TRACKER_HOST=127.0.0.1`, `TRACKER_PORT=4310` (nginx proxies to it).
 - The keys: paste them below the settings, or set `WATCH_ENV_FILE=/path/to/mrpscan/backend/.env` to read the MRPscan backend's own .env (re-read every run, so rotated keys show up without a restart).
@@ -77,7 +76,7 @@ Update later: `git pull && pm2 restart apitracker`.
 
 ## Phone app (APK)
 
-`APItracker.apk` (source in `android/`) opens the frontend's dashboard. It holds no API keys; the first time it asks for the `TRACKER_TOKEN` access key.
+`APItracker.apk` (source in `android/`) opens the frontend's dashboard. It holds no API keys.
 
 - Default address = `http://apitracker.mrpscan.com` (nginx redirects to https once certbot has run). **Server** (top of the dashboard) or the connect screen changes it.
 - Laptop on the same Wi-Fi instead: enter `http://<laptop IP>:4300` (the frontend listens on the Wi-Fi; allow Node through the Windows firewall).
@@ -87,7 +86,8 @@ Update later: `git pull && pm2 restart apitracker`.
 
 `backend/.env` (copy `backend/.env.example`):
 - `TRACKER_PORT` (4310), `TRACKER_HOST` (127.0.0.1 = only the frontend server on this machine reaches it)
-- `TRACKER_TOKEN` access key; `TRUST_LOCALHOST=true` skips it for this laptop only (the frontend passes the real visitor in X-Forwarded-For, so a phone still needs the key). Set `false` on a server.
+- `TRACKER_PASSWORD` empty (default) = open access: no sign-in, anyone with the URL sees the dashboard. Set it to require sign-in (cookie for 30 days, 10 wrong tries per 15 min per address; scripts send `x-tracker-password`). With a password, `TRUST_LOCALHOST=true` lets this laptop skip it; keep `false` on a server.
+- Manual **Check** skips a service checked in the last 30 s, so clicks cannot hammer the providers.
 - `CORS_ORIGINS` dashboards allowed to call the backend straight from the browser (only needed with frontend `API_URL`)
 - `WATCH_ENV_FILE` read keys from another .env (e.g. the MRPscan backend's) — re-read every run
 - `TRACK_URLS` extra URLs, comma separated

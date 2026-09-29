@@ -18,6 +18,7 @@
     <div class="run">
       <span id="runInfo" class="muted"></span>
       <button id="serverBtn" class="btn ghost" type="button" hidden>Server</button>
+      <button id="logoutBtn" class="btn ghost" type="button" hidden>Sign out</button>
       <button id="checkAll" class="btn primary" type="button">Check all now</button>
     </div>
   </header>
@@ -66,13 +67,13 @@
     </form>
   </dialog>
 
-  <dialog id="keyDialog">
-    <form id="keyForm" method="dialog">
-      <h2>Access key</h2>
-      <p class="muted small">Enter the TRACKER_TOKEN from the tracker's .env.</p>
-      <label>Key <input name="key" type="password" autocomplete="off" required></label>
-      <p id="keyError" class="error small" hidden>That key was not accepted.</p>
-      <div class="dialog-actions"><span class="spacer"></span><button type="submit" class="btn primary">Open</button></div>
+  <dialog id="loginDialog">
+    <form id="loginForm" method="dialog">
+      <h2>Sign in</h2>
+      <p class="muted small">Enter the APItracker password.</p>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <p id="loginError" class="error small" hidden></p>
+      <div class="dialog-actions"><span class="spacer"></span><button type="submit" class="btn primary">Sign in</button></div>
     </form>
   </dialog>
 

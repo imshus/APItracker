@@ -15,8 +15,7 @@ import android.webkit.WebViewClient;
 
 /**
  * APItracker phone app: shows the dashboard served by the APItracker server (SERVER_URL,
- * changeable in the app). No API keys live in the APK; the server holds them and asks
- * for its access key (TRACKER_TOKEN) the first time, which the page remembers.
+ * changeable in the app). No API keys live in the APK; the server holds them.
  */
 public class MainActivity extends Activity {
     private static final String PREFS = "apitracker";

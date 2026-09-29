@@ -8,6 +8,7 @@ const { secretValues, redact, request } = require('./util');
 const { readWatchedEnv } = require('./config');
 
 const CHECK_TIMEOUT_MS = 45000;
+const MANUAL_COOLDOWN_MS = 30000;
 
 function withTimeout(promise, ms) {
   let timer;
@@ -42,11 +43,19 @@ class Runner {
     return listServices(this.readEnv() || {}, this.settings);
   }
 
+  // A manual check skips anything checked moments ago, so repeated clicks
+  // (the dashboard may be public) cannot hammer the providers.
+  recent(id, now = Date.now()) {
+    const last = this.store.state.results[id]?.checkedAt;
+    return Boolean(last) && now - Date.parse(last) < MANUAL_COOLDOWN_MS;
+  }
+
   // ids = null → every service that is due (or all of them with force).
   // Runs are queued, never overlapped; the ids show as "checking" at once.
   run({ ids = null, force = false } = {}) {
     const known = this.services().map((s) => s.id);
-    const marked = ids ? ids.filter((id) => known.includes(id)) : force ? known : [];
+    const wanted = ids ? ids.filter((id) => known.includes(id)) : force ? known : [];
+    const marked = wanted.filter((id) => !this.recent(id));
     marked.forEach((id) => this.checking.add(id));
     const job = this.queue.then(() => this.execute({ ids, force })).catch((err) => {
       console.error('[runner] run failed:', err);
@@ -73,7 +82,9 @@ class Runner {
     }
     const all = listServices(env, this.settings);
     const now = Date.now();
-    const chosen = ids ? all.filter((s) => ids.includes(s.id)) : all.filter((s) => force || this.due(s, now));
+    const chosen = ids || force
+      ? all.filter((s) => (!ids || ids.includes(s.id)) && !this.recent(s.id, now))
+      : all.filter((s) => this.due(s, now));
     if (!chosen.length) return;
 
     const net = await request(this.settings.connectivityUrl, { timeoutMs: 8000 });
