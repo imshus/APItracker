@@ -35,6 +35,8 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setAllowFileAccess(true);
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        // Always start from the server's current dashboard, never a stored copy.
+        web.clearCache(true);
         s.setTextZoom(100);
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient() {
