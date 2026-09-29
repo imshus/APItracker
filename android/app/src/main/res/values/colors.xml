@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MRPscan palette: cream page, red brand -->
+    <color name="ic_launcher_background">#D9291F</color>
+    <color name="page">#FBF7F0</color>
+</resources>

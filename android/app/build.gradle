@@ -1,0 +1,90 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The APK holds no API keys. It only knows where the APItracker server is and shows
+// that server's dashboard; the server keeps the keys behind TRACKER_TOKEN.
+// Default = this computer's LAN address at build time; it can be changed inside the app.
+def lanAddress() {
+    try {
+        for (ni in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+            if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue
+            def name = (ni.displayName ?: '').toLowerCase()
+            if (name.contains('virtual') || name.contains('vmware') || name.contains('hyper-v') || name.contains('vethernet') || name.contains('wsl') || name.contains('docker')) continue
+            for (addr in Collections.list(ni.getInetAddresses())) {
+                if (addr instanceof Inet4Address && addr.isSiteLocalAddress()) return addr.hostAddress
+            }
+        }
+    } catch (ignored) { }
+    return '192.168.1.2'
+}
+// Settings come from android/.env. Only these keys are read; the tracker's own .env with
+// the API keys is never touched by this build.
+def ENV_KEYS_FOR_APK = ['APP_NAME', 'SERVER_URL', 'SERVER_PORT']
+def dotenv = [:]
+def envFile = rootProject.file('.env')
+if (envFile.exists()) {
+    envFile.eachLine('UTF-8') { line ->
+        def m = line =~ /^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/
+        if (m.matches() && ENV_KEYS_FOR_APK.contains(m.group(1))) dotenv[m.group(1)] = m.group(2)
+    }
+}
+def setting = { String key, String fallback -> System.getenv(key) ?: (dotenv[key] ?: fallback) }
+
+def appName = setting('APP_NAME', 'APItracker')
+def serverPort = setting('SERVER_PORT', '4300')
+def defaultServer = setting('SERVER_URL', "http://${lanAddress()}:${serverPort}")
+
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'com.itsolution.apitracker'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.itsolution.apitracker'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'DEFAULT_SERVER_URL', '"' + defaultServer + '"'
+        resValue 'string', 'app_name', appName
+        // Test copies: `gradlew assembleRelease -PtestSuffix=.test` installs next to the real app.
+        if (project.hasProperty('testSuffix')) applicationIdSuffix project.property('testSuffix')
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProps.getProperty('storeFile')) {
+                storeFile rootProject.file(keystoreProps.getProperty('storeFile'))
+                storePassword keystoreProps.getProperty('storePassword')
+                keyAlias keystoreProps.getProperty('keyAlias')
+                keyPassword keystoreProps.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig keystoreProps.getProperty('storeFile') ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

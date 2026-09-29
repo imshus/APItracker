@@ -1,0 +1,18 @@
+{
+  "name": "apitracker-backend",
+  "version": "1.0.0",
+  "description": "APItracker backend: checks every MRPscan API key and serves the results as a JSON API",
+  "main": "src/server.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "ioredis": "^5.11.1",
+    "mongodb": "^6.21.0"
+  }
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- app_name comes from APP_NAME in android/.env (see app/build.gradle). -->
+</resources>

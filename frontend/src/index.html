@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>APItracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>APItracker</h1>
+      <p class="sub">Keys, balances, expiry dates and issues for every API MRPscan runs on</p>
+    </div>
+    <div class="run">
+      <span id="runInfo" class="muted"></span>
+      <button id="serverBtn" class="btn ghost" type="button" hidden>Server</button>
+      <button id="checkAll" class="btn primary" type="button">Check all now</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section id="tiles" class="tiles" aria-label="Summary"></section>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="services" class="active">Services</button>
+    <button type="button" role="tab" data-tab="issues">Issues <span id="issueCount" class="count" hidden></span></button>
+    <button type="button" role="tab" data-tab="expiry">Expiry dates</button>
+  </nav>
+
+  <main>
+    <section id="tab-services"></section>
+
+    <section id="tab-issues" hidden>
+      <div class="filters">
+        <button type="button" class="chip active" data-filter="open">Open</button>
+        <button type="button" class="chip" data-filter="resolved">Resolved</button>
+        <button type="button" class="chip" data-filter="all">All</button>
+      </div>
+      <div id="issues"></div>
+    </section>
+
+    <section id="tab-expiry" hidden>
+      <div id="expiryList"></div>
+    </section>
+  </main>
+
+  <dialog id="metaDialog">
+    <form id="metaForm" method="dialog">
+      <h2 id="metaTitle">Set expiry</h2>
+      <p class="muted small">For dates the API can't report: plan renewal, credit top-up, card on file, domain.</p>
+      <label>What expires <input name="expiryLabel" placeholder="Plan renewal" maxlength="60"></label>
+      <label>Date <input name="expiresOn" type="date"></label>
+      <label>Plan <input name="plan" placeholder="e.g. Pro monthly" maxlength="80"></label>
+      <label>Notes <textarea name="notes" rows="3" maxlength="1000" placeholder="Who pays, which card, login email…"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="metaClear">Clear</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="metaCancel">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="keyDialog">
+    <form id="keyForm" method="dialog">
+      <h2>Access key</h2>
+      <p class="muted small">Enter the TRACKER_TOKEN from the tracker's .env.</p>
+      <label>Key <input name="key" type="password" autocomplete="off" required></label>
+      <p id="keyError" class="error small" hidden>That key was not accepted.</p>
+      <div class="dialog-actions"><span class="spacer"></span><button type="submit" class="btn primary">Open</button></div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

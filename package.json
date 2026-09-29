@@ -1,0 +1,14 @@
+{
+  "name": "apitracker",
+  "version": "1.0.0",
+  "description": "APItracker: separate backend/ (API, port 4310), frontend/ (dashboard, port 4300) and android/ (phone app)",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "setup": "npm install --prefix backend",
+    "start": "node scripts/start-all.js",
+    "start:backend": "npm start --prefix backend",
+    "start:frontend": "npm start --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend"
+  }
+}
