@@ -6,6 +6,7 @@ const FIXED = [
   require('./checks/openai'),
   require('./checks/razorpay'),
   require('./checks/msg91'),
+  require('./checks/smtp'),
   require('./checks/sandbox'),
   require('./checks/pdfmonkey'),
   require('./checks/metals'),

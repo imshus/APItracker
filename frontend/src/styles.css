@@ -182,6 +182,10 @@ a { color: var(--accent-deep); font-weight: 600; }
 .exp-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
 .exp-row .when { text-align: right; font-variant-numeric: tabular-nums; }
 .meta-note { padding: 8px 12px; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; overflow-wrap: anywhere; }
+.mail-box { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; overflow-wrap: anywhere; }
+.mail-box p { margin: 0; color: var(--ink-2); }
+.mail-box p.error { color: var(--down); }
+.mail-box .btn { margin-top: 4px; }
 
 details.more > summary { color: var(--ink-2); font-size: 13px; font-weight: 700; cursor: pointer; list-style: none; }
 details.more > summary::-webkit-details-marker { display: none; }

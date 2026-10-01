@@ -96,6 +96,7 @@ class Runner {
     }
 
     const secrets = secretValues(env);
+    const before = this.notifier ? this.notifier.snapshot() : null;
     chosen.forEach((s) => this.checking.add(s.id));
     await Promise.all(chosen.map(async (service) => {
       const r = new Report();
@@ -115,6 +116,9 @@ class Runner {
 
     state.lastRun = { startedAt, finishedAt: new Date().toISOString(), ran: chosen.map((s) => s.id) };
     this.store.save();
+    // Issues opened, worse or resolved by this run → one email (not awaited:
+    // a slow mail server must not hold up the next run).
+    if (before) this.notifier.afterChange(before);
   }
 
   start() {

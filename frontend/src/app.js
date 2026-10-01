@@ -221,6 +221,7 @@ function svcBody(s) {
     ${extra.length ? `<ul class="problems">${extra.map((p) => `<li class="${esc(p.level)}">${esc(p.message)}</li>`).join('')}</ul>` : ''}
     ${s.expiries.length ? `<div class="exp">${s.expiries.map(expRow).join('')}</div>` : ''}
     ${s.meta?.plan || s.meta?.notes ? `<div class="meta-note">${s.meta.plan ? `<strong>${esc(s.meta.plan)}</strong>` : ''}${s.meta.plan && s.meta.notes ? ' · ' : ''}${esc(s.meta.notes || '')}</div>` : ''}
+    ${s.id === 'smtp' ? emailUpdates(state.data.notify) : ''}
     ${details(s)}
     <div class="svc-foot">
       <div class="stats">
@@ -234,6 +235,25 @@ function svcBody(s) {
         <button type="button" class="btn small" data-action="check" data-id="${esc(s.id)}" ${s.checking ? 'disabled' : ''}>Check now</button>
       </div>
       ${Object.keys(s.links || {}).length ? `<div class="links">${Object.entries(s.links).map(([label, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>`).join('')}</div>` : ''}
+    </div>`;
+}
+
+// Follow-up emails go out over this same SMTP account.
+function emailUpdates(n) {
+  if (!n) return '';
+  if (!n.enabled) {
+    return '<div class="mail-box"><b>Email updates are off</b><p>Set <span class="mono">ALERT_EMAIL_TO</span> in backend/.env to get an email when an issue opens or is resolved, plus a daily summary.</p></div>';
+  }
+  const daily = n.dailyHour >= 0 ? ` and a daily summary after ${n.dailyHour}:00` : '';
+  const last = n.lastError
+    ? `<p class="error">Last email failed ${esc(ago(n.lastErrorAt))}: ${esc(n.lastError)}</p>`
+    : n.lastSentAt ? `<p>Last sent ${esc(ago(n.lastSentAt))}: ${esc(n.lastSubject || '')}</p>` : '<p>Nothing sent yet.</p>';
+  return `
+    <div class="mail-box">
+      <b>Email updates → ${esc(n.to.join(', '))}</b>
+      <p>An email when an issue opens, gets worse or is resolved${daily}.</p>
+      ${last}
+      <button type="button" class="btn small ghost" data-action="notify-test">Send test update</button>
     </div>`;
 }
 
@@ -463,6 +483,19 @@ function schedule() {
   state.pollTimer = setTimeout(refresh, busy ? 1500 : 20000);
 }
 
+async function sendTestUpdate(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const out = await api('/notify/test', { method: 'POST', body: '{}' });
+    state.data.notify = out.notify;
+    btn.textContent = 'Sent';
+  } catch (err) {
+    alert(`Not sent: ${err.message}`);
+  }
+  setTimeout(render, 1500);
+}
+
 async function runCheck(ids) {
   try {
     state.data = await api('/check', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) });
@@ -528,6 +561,7 @@ document.addEventListener('click', (e) => {
     if (action === 'gst-more') { gst.shown += 100; updateGstRows(); }
     if (action === 'check') runCheck([id]);
     if (action === 'meta') openMeta(id);
+    if (action === 'notify-test') sendTestUpdate(btn);
     if (action === 'resolve') {
       api(`/issues/${encodeURIComponent(id)}/resolve`, { method: 'POST', body: '{}' }).then(refresh).catch(() => {});
     }

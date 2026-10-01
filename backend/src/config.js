@@ -30,6 +30,16 @@ const settings = {
   mongoLimitMb: num(process.env.MONGO_STORAGE_LIMIT_MB, 512),
   redisLimitMb: num(process.env.REDIS_MEMORY_LIMIT_MB, 30),
   trackUrls: list(process.env.TRACK_URLS),
+  // Email updates over the backend's SMTP account: who gets them, the IST
+  // hour of the daily summary ("off" = issue emails only) and the link in them.
+  alertEmailTo: list(process.env.ALERT_EMAIL_TO),
+  dailySummaryHour: (() => {
+    const v = String(process.env.DAILY_SUMMARY_HOUR ?? '9').trim().toLowerCase();
+    if (v === '' || v === 'off') return -1;
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 0 && n <= 23 ? n : 9;
+  })(),
+  dashboardUrl: (process.env.DASHBOARD_URL || 'https://apitracker.mrpscan.com').replace(/\/+$/, ''),
   // Only for tests against a fake OpenAI; the real API otherwise.
   openaiApiBase: (process.env.OPENAI_API_BASE || 'https://api.openai.com').replace(/\/+$/, ''),
   serveFrontend: String(process.env.SERVE_FRONTEND ?? 'true').toLowerCase() !== 'false',

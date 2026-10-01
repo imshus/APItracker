@@ -30,6 +30,7 @@ Open http://localhost:4300. Checks run on start and every `CHECK_INTERVAL_MINUTE
 | OpenAI | `GET /v1/models/{OPENAI_MODEL}`; with `OPENAI_ADMIN_KEY` also the Costs API | key valid, model access; spend this month/today, and credit left = balance you entered − spend since |
 | Razorpay | `GET /v1/payments?count=1` | key valid, live/test, latest payment, webhook-secret sanity |
 | MSG91 | `validate.php` + `balance.php` | key valid, SMS balance |
+| SMTP email | sign-in to `SMTP_HOST` with `SMTP_USER`/`SMTP_PASS` (nothing is sent) | invoice email account works, `SMTP_FROM` set |
 | Sandbox GST | `POST /authenticate` | keys valid, access-token expiry |
 | PDFMonkey | `GET /current_user`, both templates | documents left, plan, trial end, templates exist |
 | metals.dev | `GET /usage` (does not use quota) | requests left this month |
@@ -68,7 +69,11 @@ In `backend/.env` on the server:
 - `TRACKER_HOST=127.0.0.1`, `TRACKER_PORT=4310` (nginx proxies to it).
 - The keys: paste them below the settings, or set `WATCH_ENV_FILE=/path/to/mrpscan/backend/.env` to read the MRPscan backend's own .env (re-read every run, so rotated keys show up without a restart).
 
-Update later: `git pull && pm2 restart apitracker`.
+Update later: `git pull && npm ci --omit=dev && pm2 restart apitracker` (run in `backend/`; `npm ci` matters when packages changed, e.g. nodemailer for email updates).
+
+### Email updates
+
+Set `ALERT_EMAIL_TO` (comma-separated) in `backend/.env`. The tracker then emails, over the same SMTP account the backend sends invoices with (`SMTP_*`), when an issue opens, gets worse or is resolved, and sends a daily summary after `DAILY_SUMMARY_HOUR` IST (default 9, `off` to skip). **Send test update** in the SMTP row sends the summary once (at most every 10 minutes).
 
 ## Phone app (APK)
 

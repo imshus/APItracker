@@ -15,9 +15,12 @@ const { Store } = require('./store');
 const { Runner } = require('./runner');
 const { evaluate } = require('./evaluate');
 const incidents = require('./incidents');
+const { Notifier } = require('./notify');
 
 const store = new Store(settings.dataFile);
 const runner = new Runner(store, settings);
+const notifier = new Notifier({ store, settings, readEnv: () => runner.readEnv(), summary: () => overview() });
+runner.notifier = notifier;
 
 const frontendIndex = path.join(settings.frontendDir, 'index.html');
 const servesFrontend = settings.serveFrontend && fs.existsSync(frontendIndex);
@@ -77,6 +80,7 @@ function overview() {
     watchEnvFile: path.relative(settings.root, settings.watchEnvFile) || settings.watchEnvFile,
     envError: runner.envError,
     openIssues: state.incidents.filter((i) => !i.resolvedAt).length,
+    notify: notifier.status(),
     uiVersion,
     services,
   };
@@ -130,6 +134,7 @@ app.post('/api/issues', (req, res) => {
   if (!message || !service) return res.status(400).json({ error: 'service and message are required' });
   const level = body.level === 'warn' ? 'warn' : 'down';
   const known = runner.services().find((s) => s.id === service || s.name.toLowerCase() === service.toLowerCase());
+  const before = notifier.snapshot();
   const incident = incidents.report(store.state, {
     serviceId: known ? known.id : service,
     serviceName: known ? known.name : service,
@@ -138,15 +143,25 @@ app.post('/api/issues', (req, res) => {
     detail: body.detail ? String(body.detail).slice(0, 2000) : null,
   }, new Date().toISOString());
   store.save();
+  notifier.afterChange(before);
   res.status(201).json({ id: incident.id, count: incident.count });
 });
 
 app.post('/api/issues/:id/resolve', (req, res) => {
   const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
+  const before = notifier.snapshot();
   const incident = incidents.resolve(store.state, req.params.id, new Date().toISOString(), note);
   if (!incident) return res.status(404).json({ error: 'No such issue' });
   store.save();
+  notifier.afterChange(before);
   res.json({ issue: incident });
+});
+
+// "Send test update" on the dashboard: the summary email, at most once per
+// ten minutes, to ALERT_EMAIL_TO.
+app.post('/api/notify/test', async (req, res) => {
+  const out = await notifier.test();
+  res.status(out.ok ? 200 : 400).json({ ...out, notify: notifier.status() });
 });
 
 // What the APIs cannot tell us: plan renewal / expiry date, the amount
@@ -177,11 +192,13 @@ app.put('/api/meta/:id', (req, res) => {
   else store.state.meta[service.id] = meta;
 
   const result = store.state.results[service.id];
+  const openBefore = notifier.snapshot();
   if (result) {
     const ev = evaluate(result, store.state.meta[service.id], settings);
     incidents.syncCheck(store.state, service, ev, new Date().toISOString(), null, { seen: false });
   }
   store.save();
+  notifier.afterChange(openBefore);
   // A new balance changes what some checks compute (OpenAI counts it down by
   // real spend), so check that service again straight away.
   if (amountsChanged) runner.run({ ids: [service.id], force: true });
@@ -205,5 +222,11 @@ app.listen(settings.port, settings.host, () => {
   console.log(servesFrontend ? `Dashboard also served at / from ${settings.frontendDir}` : 'Dashboard not served here (SERVE_FRONTEND=false or frontend/src missing).');
   console.log(`Watching keys in ${settings.watchEnvFile}; checks every ${settings.intervalMinutes} min`);
   console.log(settings.corsOrigins.length ? `Browsers may call it directly from: ${settings.corsOrigins.join(', ')}` : 'No CORS origins: browsers reach it only through the frontend server.');
-  if (process.env.NO_SCHEDULE !== 'true') runner.start();
+  console.log(notifier.enabled
+    ? `Email updates to ${settings.alertEmailTo.join(', ')}${settings.dailySummaryHour >= 0 ? `, daily summary after ${settings.dailySummaryHour}:00 IST` : ''}`
+    : 'Email updates off (set ALERT_EMAIL_TO to turn them on).');
+  if (process.env.NO_SCHEDULE !== 'true') {
+    runner.start();
+    setInterval(() => notifier.maybeDailySummary(), 5 * 60 * 1000);
+  }
 });
