@@ -53,7 +53,7 @@ module.exports = {
     if (!r.requireKey('OPENAI_API_KEY', key, { mode: kind })) return;
     const base = settings.openaiApiBase;
 
-    const model = env.OPENAI_MODEL || 'gpt-5.6-luna';
+    const model = env.OPENAI_MODEL || 'gpt-6-luna';
     r.fact('Model', model);
     r.fact('Service tier', env.OPENAI_SERVICE_TIER);
     r.fact('Reasoning effort', env.OPENAI_REASONING_EFFORT);
