@@ -118,4 +118,17 @@ function resolve(state, id, at, note) {
   return incident;
 }
 
-module.exports = { syncCheck, report, resolve };
+// A check issue of a service no longer tracked (a provider removed, a URL
+// dropped from TRACK_URLS) would never see the clean check that closes it.
+// Returns how many were closed.
+function closeUntracked(state, trackedIds, at) {
+  const tracked = new Set(trackedIds);
+  const stale = state.incidents.filter((i) => i.source === 'check' && !i.resolvedAt && !tracked.has(i.serviceId));
+  for (const incident of stale) {
+    incident.resolvedAt = at;
+    addLog(incident, at, 'ok', 'No longer tracked');
+  }
+  return stale.length;
+}
+
+module.exports = { syncCheck, report, resolve, closeUntracked };

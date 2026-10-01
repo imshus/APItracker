@@ -311,7 +311,7 @@ function renderExpiry(d) {
         </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="muted small">OpenAI, Gemini, Sandbox and Resend do not report balance or renewal to an API key: add them with <b>Edit</b> (or "Balance &amp; expiry" on the card). Warnings start ${d.expiryWarnDays} days before a date.</p>`;
+    <p class="muted small">OpenAI and Sandbox do not report balance or renewal to an API key: add them with <b>Edit</b> (or "Balance &amp; expiry" on the card). Warnings start ${d.expiryWarnDays} days before a date.</p>`;
 }
 
 async function loadIssues() {

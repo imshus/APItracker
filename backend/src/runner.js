@@ -81,6 +81,7 @@ class Runner {
       return;
     }
     const all = listServices(env, this.settings);
+    if (incidents.closeUntracked(state, all.map((s) => s.id), startedAt)) this.store.save();
     const now = Date.now();
     const chosen = ids || force
       ? all.filter((s) => (!ids || ids.includes(s.id)) && !this.recent(s.id, now))

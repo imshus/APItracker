@@ -4,10 +4,8 @@ const { urlService } = require('./checks/url');
 
 const FIXED = [
   require('./checks/openai'),
-  require('./checks/gemini'),
   require('./checks/razorpay'),
   require('./checks/msg91'),
-  require('./checks/resend'),
   require('./checks/sandbox'),
   require('./checks/pdfmonkey'),
   require('./checks/metals'),

@@ -150,7 +150,7 @@ app.post('/api/issues/:id/resolve', (req, res) => {
 });
 
 // What the APIs cannot tell us: plan renewal / expiry date, the amount
-// bought and the amount left (OpenAI credit, Gemini billing…), plan, notes.
+// bought and the amount left (OpenAI credit…), plan, notes.
 // expiresOn = YYYY-MM-DD or null to clear; amounts are free text ("$50").
 app.put('/api/meta/:id', (req, res) => {
   const service = runner.services().find((s) => s.id === req.params.id);
