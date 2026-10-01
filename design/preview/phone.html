@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>APItracker · Android view</title>
+<style>
+  :root { --bg: #e9e4da; --ink: #3b352b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); font-family: system-ui, sans-serif; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; padding: 16px; min-height: 100vh; overflow: hidden; }
+  .phone { position: relative; width: 384px; height: 832px; flex: none; transform-origin: top center; padding: 12px; border-radius: 46px; background: #1b1b1d; box-shadow: 0 0 0 2px #3a3a3e, 0 30px 60px -20px rgba(0,0,0,.45); }
+  .phone::before { content: ''; position: absolute; right: -4px; top: 150px; width: 4px; height: 70px; border-radius: 0 3px 3px 0; background: #2c2c30; }
+  .phone::after { content: ''; position: absolute; right: -4px; top: 240px; width: 4px; height: 40px; border-radius: 0 3px 3px 0; background: #2c2c30; }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 34px; overflow: hidden; background: #fbf7f0; display: flex; flex-direction: column; }
+  .status { flex: none; height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font: 600 13px system-ui, sans-serif; color: #15120d; background: #fbf7f0; position: relative; }
+  .status .cam { position: absolute; left: 50%; top: 9px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #111; }
+  .status .icons { display: flex; gap: 5px; align-items: center; }
+  .status svg { width: 15px; height: 15px; fill: #15120d; }
+  iframe { flex: 1; width: 100%; border: 0; display: block; }
+  .nav { flex: none; height: 22px; display: flex; align-items: center; justify-content: center; background: #fbf7f0; }
+  .nav i { width: 110px; height: 4px; border-radius: 2px; background: #15120d; opacity: .75; }
+  .bar { font-size: 12.5px; display: flex; gap: 10px; align-items: center; }
+  .bar a { color: inherit; }
+  .bar button { font: inherit; border: 1px solid #c9bfa8; background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="screen">
+      <div class="status"><span id="clock">9:41</span><span class="cam"></span>
+        <span class="icons">
+          <svg viewBox="0 0 24 24"><path d="M2 20h3v-4H2zm5 0h3v-8H7zm5 0h3V8h-3zm5 0h3V4h-3z"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M12 20 1 8.5a15.5 15.5 0 0 1 22 0z"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M16 4h-1V2H9v2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/></svg>
+        </span>
+      </div>
+      <iframe id="app" src="http://localhost:4300/" title="APItracker app"></iframe>
+      <div class="nav"><i></i></div>
+    </div>
+  </div>
+  <div class="bar">Android view · 360 dp wide · <button id="reload" type="button">Reload</button> <a href="http://localhost:4300/" target="_blank">open plain ↗</a></div>
+  <script>
+    const tick = () => { const d = new Date(); document.getElementById('clock').textContent = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: false }); };
+    tick(); setInterval(tick, 30000);
+    // Shrink the whole phone to fit short windows instead of cropping it.
+    const fit = () => { const p = document.querySelector(".phone"); const k = Math.min(1, (innerHeight - 76) / 832, (innerWidth - 32) / 384); p.style.transform = `scale(${k})`; p.style.marginBottom = `${-832 * (1 - k)}px`; };
+    fit(); addEventListener("resize", fit); new ResizeObserver(fit).observe(document.documentElement);
+    document.getElementById('reload').onclick = () => { const f = document.getElementById('app'); f.src = f.src; };
+  </script>
+</body>
+</html>
