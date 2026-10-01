@@ -32,7 +32,7 @@ const SERVICES = [
     result: result({
       summary: 'Key valid, model access OK', ms: 412,
       keys: [key('OPENAI_API_KEY', 'sk-p…9f2a'), key('OPENAI_ADMIN_KEY', 'sk-a…c71e')],
-      facts: [{ label: 'Model', value: 'gpt-5-mini' }, { label: 'Spend this month', value: '$42.60' }, { label: 'Spend today', value: '$1.84' }],
+      facts: [{ label: 'Model', value: 'gpt-6-luna' }, { label: 'Spend this month', value: '$42.60' }, { label: 'Spend today', value: '$1.84' }],
       available: { label: 'Credit left (entered $50 − spend since)', value: 7.4, total: 50, unit: '', money: 'USD' },
     }),
     meta: { amountTotal: '$50', amountLeft: '$7.40', amountUpdatedAt: ago(2 * 3600000), plan: 'Pay as you go', notes: 'Card on file: HDFC ****4821' },
