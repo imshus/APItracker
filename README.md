@@ -89,7 +89,7 @@ Update later: `git pull && pm2 restart apitracker`.
 - `CORS_ORIGINS` dashboards allowed to call the backend straight from the browser (only needed with frontend `API_URL`)
 - `WATCH_ENV_FILE` read keys from another .env (e.g. the MRPscan backend's) — re-read every run
 - `TRACK_URLS` extra URLs, comma separated
-- Optional thresholds: `EXPIRY_WARN_DAYS`, `MSG91_LOW_BALANCE`, `PDFMONKEY_LOW_DOCS`, `SLOW_MS`, `MEMORY_WARN_PCT`, `MONGO_STORAGE_LIMIT_MB`
+- Optional thresholds: `EXPIRY_WARN_DAYS`, `MSG91_LOW_BALANCE`, `PDFMONKEY_LOW_DOCS`, `SLOW_MS`, `MEMORY_WARN_PCT`, `MONGO_STORAGE_LIMIT_MB` (512, Atlas free plan), `REDIS_MEMORY_LIMIT_MB` (30, Redis Cloud free plan)
 
 `frontend/.env` (nothing secret): `FRONTEND_PORT` (4300), `FRONTEND_HOST` (0.0.0.0), `BACKEND_URL` (http://127.0.0.1:4310), `API_URL` (empty = forward through this server).
 

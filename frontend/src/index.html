@@ -28,7 +28,7 @@
   <nav class="tabs" role="tablist">
     <button type="button" role="tab" data-tab="services" class="active">Services</button>
     <button type="button" role="tab" data-tab="issues">Issues <span id="issueCount" class="count" hidden></span></button>
-    <button type="button" role="tab" data-tab="expiry">Expiry dates</button>
+    <button type="button" role="tab" data-tab="expiry">Balance &amp; expiry</button>
   </nav>
 
   <main>
@@ -50,10 +50,16 @@
 
   <dialog id="metaDialog">
     <form id="metaForm" method="dialog">
-      <h2 id="metaTitle">Set expiry</h2>
-      <p class="muted small">For dates the API can't report: plan renewal, credit top-up, card on file, domain.</p>
-      <label>What expires <input name="expiryLabel" placeholder="Plan renewal" maxlength="60"></label>
-      <label>Date <input name="expiresOn" type="date"></label>
+      <h2 id="metaTitle">Balance &amp; expiry</h2>
+      <p class="muted small">For what the API can't report: credit bought and left, plan renewal date, card on file.</p>
+      <div class="field-row">
+        <label>Total amount <input name="amountTotal" placeholder="e.g. $50 or ₹5,000" maxlength="40"></label>
+        <label>Amount left <input name="amountLeft" placeholder="e.g. $12.40" maxlength="40"></label>
+      </div>
+      <div class="field-row">
+        <label>What expires <input name="expiryLabel" placeholder="Plan renewal" maxlength="60"></label>
+        <label>Expiry date <input name="expiresOn" type="date"></label>
+      </div>
       <label>Plan <input name="plan" placeholder="e.g. Pro monthly" maxlength="80"></label>
       <label>Notes <textarea name="notes" rows="3" maxlength="1000" placeholder="Who pays, which card, login email…"></textarea></label>
       <div class="dialog-actions">

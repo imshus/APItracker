@@ -60,11 +60,14 @@ class Report {
     this.expiries.push({ label, at: date.toISOString(), source: 'api', info: Boolean(opts.info) });
   }
 
-  // lowAt/emptyAt: thresholds in the same unit as value.
-  setAvailable({ label, value, total = null, unit = '', lowAt = null }) {
+  // lowAt: threshold in the same unit as value. money: currency code (value
+  // in whole units, e.g. rupees). quiet: a balance that is normally 0 (e.g.
+  // money waiting for settlement) — shown, never warned about.
+  setAvailable({ label, value, total = null, unit = '', lowAt = null, money = null, quiet = false }) {
     const v = Number(value);
     if (!Number.isFinite(v)) return;
-    this.available = { label, value: v, total: total == null ? null : Number(total), unit };
+    this.available = { label, value: v, total: total == null ? null : Number(total), unit, money };
+    if (quiet) return;
     if (v <= 0) this.finding('down', `${label}: none left`);
     else if (lowAt != null && v < lowAt) this.finding('warn', `${label}: only ${v.toLocaleString('en-IN')} ${unit}`.trim());
   }

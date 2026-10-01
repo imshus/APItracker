@@ -216,9 +216,34 @@ main { max-width: 1280px; margin: 0 auto; }
 .problems li.warn { background: var(--warn-bg); color: var(--warn); }
 .problems li.down { background: var(--down-bg); color: var(--down); }
 
-.avail .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
-.avail .num { font-weight: 700; font-variant-numeric: tabular-nums; }
-.meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+.figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fig-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.fig-value { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fig-sub { color: var(--muted); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.fig-add {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-deep);
+  font-size: 12px;
+  text-align: left;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: var(--off-bar); vertical-align: 1px; }
+.dot.ok { background: var(--ok-bar); }
+.dot.warn { background: var(--warn-bar); }
+.dot.down { background: var(--down-bar); }
+.meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: -2px; }
 .meter span { display: block; height: 100%; border-radius: 999px; background: var(--ok-bar); }
 .meter span.warn { background: var(--warn-bar); }
 .meter span.down { background: var(--down-bar); }
@@ -351,7 +376,7 @@ pre.body {
 
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 table.expiry { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-table.expiry th, table.expiry td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.expiry th, table.expiry td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: top; }
 table.expiry th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
 table.expiry tr:last-child td { border-bottom: 0; }
 table.expiry tr.info td { color: var(--muted); }
@@ -381,6 +406,7 @@ dialog input, dialog textarea {
   color: var(--ink);
 }
 dialog input:focus, dialog textarea:focus { outline: 2px solid rgba(217, 41, 31, 0.35); border-color: var(--accent); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dialog-actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
 .spacer { flex: 1; }
 

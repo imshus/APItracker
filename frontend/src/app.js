@@ -75,7 +75,35 @@ function daysClass(e) {
 
 function formatAvail(a) {
   if (a.unit === 'bytes') return (n) => bytes(n);
-  return (n) => Number(n).toLocaleString('en-IN');
+  if (a.money) return (n) => Number(n).toLocaleString('en-IN', { style: 'currency', currency: a.money, maximumFractionDigits: 2 });
+  return (n) => `${Number(n).toLocaleString('en-IN')}${a.unit ? ` ${a.unit}` : ''}`;
+}
+
+// Left / total for a service: what its API reports, else what was entered
+// by hand in "Balance & expiry".
+function balanceOf(s) {
+  const a = s.result?.available;
+  const m = s.meta || {};
+  if (a) {
+    const fmt = formatAvail(a);
+    return {
+      left: fmt(a.value),
+      total: a.total ? fmt(a.total) : (m.amountTotal || null),
+      sub: a.label,
+      manual: false,
+    };
+  }
+  if (m.amountLeft || m.amountTotal) {
+    return { left: m.amountLeft || null, total: m.amountTotal || null, sub: `entered ${ago(m.amountUpdatedAt)}`, manual: true };
+  }
+  return null;
+}
+
+// The date that matters most: the soonest real expiry, else an info-only one
+// (e.g. a token the backend renews itself).
+function expiryOf(s) {
+  const byDate = (a, b) => Date.parse(a.at) - Date.parse(b.at);
+  return s.expiries.filter((e) => !e.info).sort(byDate)[0] || s.expiries.slice().sort(byDate)[0] || null;
 }
 function bytes(n) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -171,8 +199,9 @@ function card(s) {
     </div>
     <p class="summary">${esc(summary)}</p>
     ${problems.length ? `<ul class="problems">${problems.map((p) => `<li class="${p.level}">${esc(p.message)}</li>`).join('')}</ul>` : ''}
-    ${r?.available ? availBlock(r.available, s.status) : ''}
-    ${s.expiries.length ? `<div class="exp">${s.expiries.map(expRow).join('')}</div>` : ''}
+    ${figures(s)}
+    ${r?.available?.total ? meter(r.available, s.status) : ''}
+    ${s.expiries.length > 1 ? `<div class="exp">${s.expiries.map(expRow).join('')}</div>` : ''}
     ${s.meta?.plan || s.meta?.notes ? `<div class="meta-note">${s.meta.plan ? `<strong>${esc(s.meta.plan)}</strong>` : ''}${s.meta.plan && s.meta.notes ? ' · ' : ''}${esc(s.meta.notes || '')}</div>` : ''}
     ${details(s)}
     <div class="card-foot">
@@ -184,22 +213,39 @@ function card(s) {
       </div>
       <div class="actions">
         <span class="links">${Object.entries(s.links || {}).map(([label, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>`).join('')}</span>
-        <button type="button" class="btn small ghost" data-action="meta" data-id="${esc(s.id)}">Set expiry</button>
+        <button type="button" class="btn small ghost" data-action="meta" data-id="${esc(s.id)}">Balance &amp; expiry</button>
         <button type="button" class="btn small" data-action="check" data-id="${esc(s.id)}" ${s.checking ? 'disabled' : ''}>Check</button>
       </div>
     </div>
   </article>`;
 }
 
-function availBlock(a, status) {
-  const fmt = formatAvail(a);
-  const pct = a.total ? Math.max(0, Math.min(100, (a.value / a.total) * 100)) : null;
-  const cls = a.value <= 0 ? 'down' : status === 'warn' && pct != null && pct < 15 ? 'warn' : '';
+// Left · Total · Expires, on every card. Anything the API does not report
+// links to the dialog where it can be entered by hand.
+function figures(s) {
+  const b = balanceOf(s);
+  const e = expiryOf(s);
+  const add = (text) => `<button type="button" class="fig-add" data-action="meta" data-id="${esc(s.id)}">${esc(text)}</button>`;
+  const cell = (label, value, sub) => `
+      <div class="fig">
+        <span class="fig-label">${esc(label)}</span>
+        <span class="fig-value">${value}</span>
+        <span class="fig-sub">${sub}</span>
+      </div>`;
+  const manualTag = b?.manual ? '<span class="tag">manual</span>' : '';
   return `
-    <div class="avail">
-      <div class="row"><span>${esc(a.label)}</span><span class="num">${esc(fmt(a.value))}${a.total ? ` <span class="muted">/ ${esc(fmt(a.total))}</span>` : ''}${a.unit && a.unit !== 'bytes' ? ` <span class="muted">${esc(a.unit)}</span>` : ''}</span></div>
-      ${pct != null ? `<div class="meter"><span class="${cls}" style="width:${pct.toFixed(1)}%"></span></div>` : ''}
+    <div class="figures">
+      ${cell('Left', b?.left ? esc(b.left) + manualTag : '—', b ? esc(b.sub) : add('not reported · add'))}
+      ${cell('Total', b?.total ? esc(b.total) : '—', b?.total ? (b.manual ? 'entered by you' : 'plan total') : add(b ? 'add total' : 'not reported · add'))}
+      ${cell('Expires', e ? esc(dateOnly(e.at)) + (e.source === 'manual' ? '<span class="tag">manual</span>' : '') : '—',
+        e ? `<span class="days ${daysClass(e)}">${esc(daysText(e))}</span> · ${esc(e.label)}` : add('no expiry reported · add'))}
     </div>`;
+}
+
+function meter(a, status) {
+  const pct = Math.max(0, Math.min(100, (a.value / a.total) * 100));
+  const cls = a.value <= 0 ? 'down' : status === 'warn' && pct < 15 ? 'warn' : '';
+  return `<div class="meter" title="${pct.toFixed(0)}% left"><span class="${cls}" style="width:${pct.toFixed(1)}%"></span></div>`;
 }
 
 function expRow(e) {
@@ -245,28 +291,27 @@ function spark(history) {
   return `<span class="spark" title="Last ${last.length} checks">${last.map((h) => `<i class="${esc(h.s)}" title="${esc(dateTime(h.t))} · ${esc(STATUS_LABEL[h.s] || h.s)}${h.ms != null ? ` · ${h.ms} ms` : ''}"></i>`).join('')}</span>`;
 }
 
+// One row per service: what is left, the total, and the next expiry —
+// soonest expiry first, services with no date after.
 function renderExpiry(d) {
-  const rows = d.services
-    .flatMap((s) => s.expiries.map((e) => ({ ...e, service: s.name })))
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  if (!rows.length) {
-    $('#expiryList').innerHTML = '<div class="empty">No expiry dates yet. They appear after the first check (TLS certificates, trials, tokens) or when you add one with "Set expiry".</div>';
-    return;
-  }
+  const rows = d.services.map((s) => ({ s, b: balanceOf(s), e: expiryOf(s) }));
+  const when = (r) => (r.e && !r.e.info ? Date.parse(r.e.at) : Infinity);
+  rows.sort((x, y) => when(x) - when(y));
   $('#expiryList').innerHTML = `
     <div class="table-wrap"><table class="expiry">
-      <thead><tr><th>Service</th><th>What</th><th>Date</th><th>Left</th><th>Source</th></tr></thead>
-      <tbody>${rows.map((e) => `
-        <tr class="${e.info ? 'info' : ''}">
-          <td>${esc(e.service)}</td>
-          <td>${esc(e.label)}</td>
-          <td>${esc(e.info ? dateTime(e.at) : dateOnly(e.at))}</td>
-          <td><span class="days ${daysClass(e)}">${esc(daysText(e))}</span></td>
-          <td>${e.source === 'manual' ? 'entered by you' : 'from the API'}</td>
+      <thead><tr><th>Service</th><th>Left</th><th>Total</th><th>Expires</th><th>In</th><th></th></tr></thead>
+      <tbody>${rows.map(({ s, b, e }) => `
+        <tr>
+          <td><span class="dot ${esc(s.status)}"></span>${esc(s.name)}</td>
+          <td>${b?.left ? `<strong>${esc(b.left)}</strong>` : '<span class="muted">—</span>'}${b ? `<div class="muted small">${esc(b.sub)}</div>` : ''}</td>
+          <td>${b?.total ? esc(b.total) : '<span class="muted">—</span>'}</td>
+          <td>${e ? `${esc(e.info ? dateTime(e.at) : dateOnly(e.at))}<div class="muted small">${esc(e.label)}${e.source === 'manual' ? ' · entered by you' : ''}</div>` : '<span class="muted">—</span>'}</td>
+          <td>${e ? `<span class="days ${daysClass(e)}">${esc(daysText(e))}</span>` : ''}</td>
+          <td><button type="button" class="btn small ghost" data-action="meta" data-id="${esc(s.id)}">Edit</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="muted small">Warnings start ${d.expiryWarnDays} days before a date. Keys with no expiry the API can report (OpenAI credit, plan renewals) can be given one with "Set expiry" on their card.</p>`;
+    <p class="muted small">OpenAI, Gemini, Sandbox and Resend do not report balance or renewal to an API key: add them with <b>Edit</b> (or "Balance &amp; expiry" on the card). Warnings start ${d.expiryWarnDays} days before a date.</p>`;
 }
 
 async function loadIssues() {
@@ -351,7 +396,9 @@ function openMeta(id) {
   if (!s) return;
   state.metaFor = id;
   const f = $('#metaForm');
-  $('#metaTitle').textContent = `Set expiry — ${s.name}`;
+  $('#metaTitle').textContent = `Balance & expiry — ${s.name}`;
+  f.amountTotal.value = s.meta?.amountTotal || '';
+  f.amountLeft.value = s.meta?.amountLeft || '';
   f.expiryLabel.value = s.meta?.expiryLabel || '';
   f.expiresOn.value = s.meta?.expiresOn || '';
   f.plan.value = s.meta?.plan || '';
@@ -362,6 +409,8 @@ function openMeta(id) {
 async function saveMeta(clear) {
   const f = $('#metaForm');
   const body = clear ? {} : {
+    amountTotal: f.amountTotal.value,
+    amountLeft: f.amountLeft.value,
     expiryLabel: f.expiryLabel.value,
     expiresOn: f.expiresOn.value,
     plan: f.plan.value,

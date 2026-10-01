@@ -36,9 +36,12 @@ module.exports = {
     if (!id || !secret) return r.fail('down', 'Key ID and Key Secret are both needed');
 
     const auth = Buffer.from(`${id}:${secret}`).toString('base64');
-    const res = await request('https://api.razorpay.com/v1/payments?count=1', {
-      headers: { Authorization: `Basic ${auth}` },
-    });
+    const get = (path) => request(`https://api.razorpay.com${path}`, { headers: { Authorization: `Basic ${auth}` } });
+    const [res, balance, settlement] = await Promise.all([
+      get('/v1/payments?count=1'),
+      get('/v1/balance'),
+      get('/v1/settlements?count=1'),
+    ]);
     r.latency(res.ms);
 
     if (!res.ok) {
@@ -46,14 +49,26 @@ module.exports = {
       return r.fail('down', failText('Razorpay call failed', res), res);
     }
     r.summary = `Keys valid · ${mode || 'unknown'} mode`;
-    const last = res.json?.items?.[0];
-    if (last?.created_at) {
-      const when = new Date(last.created_at * 1000).toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
-      });
-      r.fact('Latest payment', `${when} · ${last.status}`);
-    } else {
-      r.fact('Latest payment', 'none yet');
+
+    // Amounts come in paise. "credits" = payments that can still be taken
+    // without a Razorpay fee; "balance" = collected money not yet settled.
+    const b = balance.ok ? balance.json : null;
+    if (b) {
+      const rupees = (p) => Number(p || 0) / 100;
+      const inr = (p) => `₹${rupees(p).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      r.setAvailable({ label: 'Fee-free credit left', value: rupees(b.credits), money: 'INR', quiet: true });
+      r.fact('Account balance (unsettled)', inr(b.balance));
+      if (Number(b.refund_credits)) r.fact('Refund credits', inr(b.refund_credits));
+      if (Number(b.locked_balance)) r.fact('Locked balance', inr(b.locked_balance));
+      r.summary += ` · ${inr(b.credits)} fee-free credit left`;
     }
+
+    const when = (s) => new Date(s * 1000).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    const last = res.json?.items?.[0];
+    r.fact('Latest payment', last?.created_at ? `${when(last.created_at)} · ${last.status}` : 'none yet');
+    const s = settlement.ok ? settlement.json?.items?.[0] : null;
+    if (s) r.fact('Latest settlement', `₹${(Number(s.amount) / 100).toLocaleString('en-IN')} · ${s.status} · ${when(s.created_at)}`);
   },
 };

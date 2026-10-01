@@ -25,7 +25,10 @@ const settings = {
   msg91LowBalance: num(process.env.MSG91_LOW_BALANCE, 100),
   pdfmonkeyLowDocs: num(process.env.PDFMONKEY_LOW_DOCS, 20),
   memoryWarnPct: num(process.env.MEMORY_WARN_PCT, 85),
-  mongoLimitMb: num(process.env.MONGO_STORAGE_LIMIT_MB, 0),
+  // Plan limits the providers do not report (defaults: the free plans,
+  // Atlas M0 512 MB and Redis Cloud 30 MB). 0 hides them.
+  mongoLimitMb: num(process.env.MONGO_STORAGE_LIMIT_MB, 512),
+  redisLimitMb: num(process.env.REDIS_MEMORY_LIMIT_MB, 30),
   trackUrls: list(process.env.TRACK_URLS),
   serveFrontend: String(process.env.SERVE_FRONTEND ?? 'true').toLowerCase() !== 'false',
   frontendDir: path.resolve(ROOT, process.env.FRONTEND_DIR || '../frontend/src'),

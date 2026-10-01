@@ -149,20 +149,29 @@ app.post('/api/issues/:id/resolve', (req, res) => {
   res.json({ issue: incident });
 });
 
-// Dates and notes the APIs cannot tell us: plan renewal, card expiry,
-// credit top-up date. expiresOn = YYYY-MM-DD or null to clear.
+// What the APIs cannot tell us: plan renewal / expiry date, the amount
+// bought and the amount left (OpenAI credit, Gemini billing…), plan, notes.
+// expiresOn = YYYY-MM-DD or null to clear; amounts are free text ("$50").
 app.put('/api/meta/:id', (req, res) => {
   const service = runner.services().find((s) => s.id === req.params.id);
   if (!service) return res.status(404).json({ error: 'No such service' });
   const body = req.body || {};
   const expiresOn = body.expiresOn ? String(body.expiresOn) : '';
   if (expiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) return res.status(400).json({ error: 'expiresOn must be YYYY-MM-DD' });
+  const text = (v, max) => String(v || '').trim().slice(0, max) || null;
+  const before = store.state.meta[service.id] || {};
   const meta = {
     expiresOn: expiresOn || null,
-    expiryLabel: String(body.expiryLabel || '').trim().slice(0, 60) || null,
-    plan: String(body.plan || '').trim().slice(0, 80) || null,
-    notes: String(body.notes || '').trim().slice(0, 1000) || null,
+    expiryLabel: text(body.expiryLabel, 60),
+    amountTotal: text(body.amountTotal, 40),
+    amountLeft: text(body.amountLeft, 40),
+    plan: text(body.plan, 80),
+    notes: text(body.notes, 1000),
   };
+  const amountsChanged = meta.amountTotal !== (before.amountTotal || null) || meta.amountLeft !== (before.amountLeft || null);
+  meta.amountUpdatedAt = meta.amountTotal || meta.amountLeft
+    ? (amountsChanged ? new Date().toISOString() : before.amountUpdatedAt || new Date().toISOString())
+    : null;
   const empty = Object.values(meta).every((v) => v == null);
   if (empty) delete store.state.meta[service.id];
   else store.state.meta[service.id] = meta;

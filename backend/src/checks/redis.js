@@ -53,10 +53,13 @@ module.exports = {
       r.fact('Uptime', info.uptime_in_days ? `${info.uptime_in_days} days` : null);
 
       const used = Number(info.used_memory);
-      const max = Number(info.maxmemory);
+      // Redis Cloud hides maxmemory; REDIS_MEMORY_LIMIT_MB (default: the
+      // 30 MB free plan) stands in for it.
+      const reported = Number(info.maxmemory);
+      const max = reported > 0 ? reported : settings.redisLimitMb * 1024 * 1024;
       if (max > 0 && Number.isFinite(used)) {
         r.available = { label: 'Memory free', value: Math.max(0, max - used), total: max, unit: 'bytes' };
-        r.fact('Memory limit', formatBytes(max));
+        r.fact('Memory limit', `${formatBytes(max)}${reported > 0 ? '' : ' (plan limit from REDIS_MEMORY_LIMIT_MB)'}`);
         const pct = (used / max) * 100;
         if (pct >= 95) r.finding('down', `Memory ${pct.toFixed(0)}% full — writes may be refused or keys evicted`);
         else if (pct >= settings.memoryWarnPct) r.finding('warn', `Memory ${pct.toFixed(0)}% full`);
