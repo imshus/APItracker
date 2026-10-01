@@ -27,7 +27,7 @@ Open http://localhost:4300. Checks run on start and every `CHECK_INTERVAL_MINUTE
 
 | Service | Checks (all free, read-only) | Shows |
 |---|---|---|
-| OpenAI | `GET /v1/models/{OPENAI_MODEL}` | key valid, model access |
+| OpenAI | `GET /v1/models/{OPENAI_MODEL}`; with `OPENAI_ADMIN_KEY` also the Costs API | key valid, model access; spend this month/today, and credit left = balance you entered − spend since |
 | Google Gemini | `GET /v1beta/models/gemini-2.5-flash-lite` | key valid, model access |
 | Razorpay | `GET /v1/payments?count=1` | key valid, live/test, latest payment, webhook-secret sanity |
 | MSG91 | `validate.php` + `balance.php` | key valid, SMS balance |

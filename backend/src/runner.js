@@ -99,7 +99,7 @@ class Runner {
     await Promise.all(chosen.map(async (service) => {
       const r = new Report();
       try {
-        await withTimeout(service.check(env, r, this.settings), CHECK_TIMEOUT_MS);
+        await withTimeout(service.check(env, r, this.settings, state.meta[service.id] || {}), CHECK_TIMEOUT_MS);
       } catch (err) {
         r.fail('down', `Check did not finish: ${err.message}`);
       }

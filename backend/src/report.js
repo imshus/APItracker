@@ -68,8 +68,11 @@ class Report {
     if (!Number.isFinite(v)) return;
     this.available = { label, value: v, total: total == null ? null : Number(total), unit, money };
     if (quiet) return;
+    const shown = money
+      ? v.toLocaleString(money === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency: money })
+      : `${v.toLocaleString('en-IN')} ${unit}`.trim();
     if (v <= 0) this.finding('down', `${label}: none left`);
-    else if (lowAt != null && v < lowAt) this.finding('warn', `${label}: only ${v.toLocaleString('en-IN')} ${unit}`.trim());
+    else if (lowAt != null && v < lowAt) this.finding('warn', `${label}: only ${shown}`);
   }
 
   latency(ms) {

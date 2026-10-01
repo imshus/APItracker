@@ -182,6 +182,9 @@ app.put('/api/meta/:id', (req, res) => {
     incidents.syncCheck(store.state, service, ev, new Date().toISOString(), null, { seen: false });
   }
   store.save();
+  // A new balance changes what some checks compute (OpenAI counts it down by
+  // real spend), so check that service again straight away.
+  if (amountsChanged) runner.run({ ids: [service.id], force: true });
   res.json(overview());
 });
 

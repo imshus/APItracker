@@ -30,6 +30,8 @@ const settings = {
   mongoLimitMb: num(process.env.MONGO_STORAGE_LIMIT_MB, 512),
   redisLimitMb: num(process.env.REDIS_MEMORY_LIMIT_MB, 30),
   trackUrls: list(process.env.TRACK_URLS),
+  // Only for tests against a fake OpenAI; the real API otherwise.
+  openaiApiBase: (process.env.OPENAI_API_BASE || 'https://api.openai.com').replace(/\/+$/, ''),
   serveFrontend: String(process.env.SERVE_FRONTEND ?? 'true').toLowerCase() !== 'false',
   frontendDir: path.resolve(ROOT, process.env.FRONTEND_DIR || '../frontend/src'),
   watchEnvFile: process.env.WATCH_ENV_FILE ? path.resolve(ROOT, process.env.WATCH_ENV_FILE) : OWN_ENV,
