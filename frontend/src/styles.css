@@ -319,8 +319,38 @@ dialog input:focus, dialog textarea:focus { outline: none; border-color: var(--a
 .g-name { font-weight: 700; overflow-wrap: anywhere; }
 .g-phone { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .g-hits { font-weight: 800; font-variant-numeric: tabular-nums; }
-.gst-empty { padding: 28px 14px; color: var(--muted); text-align: center; }
+.gst-empty { grid-column: 1 / -1; padding: 28px 14px; color: var(--muted); text-align: center; }
 .more-wrap { display: flex; justify-content: center; margin-top: 8px; }
+
+/* GST checks: six tiles, a tappable row per user, a card per GST number */
+.gst-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gst-tiles .stat { padding: 10px 12px; }
+.gst-tiles .stat .value { font-size: 22px; }
+.stat .value.ok { color: var(--ok); }
+.stat .value.warn { color: var(--warn); }
+.stat .value.down { color: var(--down); }
+.gst-filters { margin-bottom: 12px; }
+.gst-row { cursor: pointer; }
+.gst-row:hover { background: var(--surface-2); }
+.gst-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gst-row.open { background: var(--surface-2); }
+.g-title { display: flex; align-items: center; gap: 8px; }
+.g-title .dot { flex: none; }
+.g-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.35; }
+.gst-detail { grid-column: 1 / -1; padding: 4px 14px 14px; background: var(--surface-2); }
+.gst-detail > [role="cell"] { display: grid; gap: 10px; }
+.gst-entry { padding: 12px 14px; border: 1.5px solid var(--border); border-left-width: 4px; border-radius: 14px; background: var(--surface); }
+.gst-entry.verified { border-left-color: var(--ok-bar); }
+.gst-entry.rejected { border-left-color: var(--down-bar); }
+.gst-entry.unable { border-left-color: var(--warn-bar); }
+.ge-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ge-no { font-weight: 700; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.ge-head .pill { margin-left: auto; }
+.ge-biz { margin-top: 4px; font-weight: 700; overflow-wrap: anywhere; }
+.gst-entry .kv { margin-top: 8px; }
+@media (max-width: 560px) {
+  .gst-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* phones: scrolling still works, the side scroll bar is hidden */
 @media (max-width: 760px) {

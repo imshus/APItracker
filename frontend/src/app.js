@@ -14,7 +14,10 @@ const state = {
   openIssues: new Set(),
   metaFor: null,
   pollTimer: null,
-  gst: { status: 'idle', users: [], updatedAt: null, message: '', q: '', sort: { key: 'hits', dir: 'desc' }, shown: 100, shell: false },
+  gst: {
+    status: 'idle', users: [], totals: null, updatedAt: null, missing: false, truncated: false, message: '',
+    q: '', filter: 'all', sort: { key: 'last', dir: 'desc' }, shown: 100, shell: false, open: new Set(), loading: false,
+  },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -369,92 +372,280 @@ function renderIssues() {
 }
 
 // ---------- GST tracker ----------
-// Backend contract (the backend for this screen is still to be built):
-//   GET /api/gst  ->  { "users": [ { "id": "…", "name": "Rakesh Soni", "phone": "9928688065", "hits": 42 } ], "updatedAt": "ISO date" }
-// hits = how many times that user has called the GST verification API. Until the route exists
-// the screen says so (a 404 from the server is treated as "not connected yet").
+// Every GST check made at MRPscan sign-up (the backend's gst_verifications),
+// grouped per user:
+//   GET /api/gst  ->  { users: [{ id, name, phone, hits, failures, status, firstCheckedAt, lastCheckedAt,
+//                                 gsts: [{ gstNumber, kind, attempts, failures, reason, errorCode, statusCode,
+//                                          details, verifiedAt, lastFailedAt, resolvedAt, resolvedGstNumber,
+//                                          accountCreatedAt, account, firstCheckedAt, lastCheckedAt }] }],
+//                       totals: { checks, users, gstNumbers, verified, failed, unable, accounts },
+//                       updatedAt, truncated, collectionMissing }
+// hits = GST checks (verify attempts) by that user. A 404 (an older server) shows "Not connected yet".
 const gst = state.gst;
 const fmtNum = (n) => Number(n).toLocaleString('en-IN');
+const USER_STATUS = {
+  account: { dot: 'ok', text: 'Account created' },
+  started: { dot: 'ok', text: 'GST confirmed, sign-up not finished' },
+  verified: { dot: 'ok', text: 'GST verified, no account yet' },
+  failed: { dot: 'down', text: 'GST failed' },
+  unable: { dot: 'warn', text: 'Couldn’t verify (registry unreachable)' },
+};
+const GST_KIND = { verified: ['ok', 'Verified'], rejected: ['down', 'Failed'], unable: ['warn', 'Not verified'] };
+// Each chip matches the tile of the same name (both count users).
+const GST_FILTERS = {
+  all: () => true,
+  verified: (u) => u.status === 'account' || u.status === 'started' || u.status === 'verified',
+  failed: (u) => u.status === 'failed',
+  unable: (u) => u.status === 'unable',
+  account: (u) => u.status === 'account',
+};
+
+const arr = (v) => (Array.isArray(v) ? v : []);
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const str = (v) => (v == null ? '' : String(v));
+
+function normalizeGstUser(u, i) {
+  const gsts = arr(u.gsts).map((g) => ({
+    gstNumber: str(g.gstNumber),
+    kind: GST_KIND[g.kind] ? g.kind : 'rejected',
+    attempts: num(g.attempts),
+    failures: num(g.failures),
+    reason: str(g.reason),
+    errorCode: str(g.errorCode),
+    statusCode: g.statusCode == null ? null : num(g.statusCode),
+    details: g.details && typeof g.details === 'object' ? g.details : null,
+    firstCheckedAt: g.firstCheckedAt || null,
+    lastCheckedAt: g.lastCheckedAt || null,
+    verifiedAt: g.verifiedAt || null,
+    lastFailedAt: g.lastFailedAt || null,
+    resolvedAt: g.resolvedAt || null,
+    resolvedGstNumber: str(g.resolvedGstNumber),
+    accountCreatedAt: g.accountCreatedAt || null,
+    account: g.account && typeof g.account === 'object' ? g.account : null,
+  }));
+  return {
+    id: str(u.id ?? i),
+    name: str(u.name) || 'Unknown user',
+    phone: str(u.phone),
+    hits: num(u.hits),
+    failures: num(u.failures),
+    status: USER_STATUS[u.status] ? u.status : 'failed',
+    firstCheckedAt: u.firstCheckedAt || null,
+    lastCheckedAt: u.lastCheckedAt || null,
+    gsts,
+    // Everything the search box matches, lower-cased once.
+    search: [u.name, u.phone, ...gsts.flatMap((g) => [g.gstNumber, g.details?.legalName, g.details?.tradeName, g.account?.name])]
+      .map((x) => str(x).toLowerCase()).join('\n'),
+  };
+}
 
 async function loadGst(silent) {
+  if (gst.loading) return; // a poll and a click must not overlap
+  gst.loading = true;
   if (!silent) { gst.status = 'loading'; renderGst(); }
   try {
     const body = await api('/gst');
-    gst.users = (Array.isArray(body.users) ? body.users : []).map((u, i) => ({
-      id: u.id ?? i, name: String(u.name ?? '') || 'Unknown user', phone: String(u.phone ?? ''), hits: Number(u.hits) || 0,
-    }));
+    gst.users = arr(body.users).map(normalizeGstUser);
+    gst.totals = body.totals && typeof body.totals === 'object' ? body.totals : null;
     gst.updatedAt = body.updatedAt || null;
+    gst.missing = Boolean(body.collectionMissing);
+    gst.truncated = Boolean(body.truncated);
+    gst.phonesMasked = Boolean(body.phonesMasked);
+    gst.loadedAt = Date.now();
     gst.status = 'ok';
   } catch (err) {
+    gst.loading = false;
     if (silent && gst.status === 'ok') return; // keep showing the last data
     gst.status = err.status === 404 ? 'unavailable' : 'error';
     gst.message = err.message;
   }
+  gst.loading = false;
   renderGst();
 }
 
 function renderGst() {
   const body = $('#gstBody');
   if (gst.status !== 'ok') {
-    gst.shell = false;
+    gst.shell = false; gst.rowsHtml = '';
     const box = {
       loading: '<div class="loading"><span class="spinner"></span>Loading…</div>',
-      unavailable: '<div class="empty"><b>Not connected yet</b><p>This screen fills up once the backend starts recording GST API hits per user.</p><button type="button" class="btn small" data-action="gst-retry">Check again</button></div>',
-      error: `<div class="empty"><b>Couldn’t load GST hits</b><p>${esc(gst.message)}</p><button type="button" class="btn small" data-action="gst-retry">Try again</button></div>`,
+      unavailable: '<div class="empty"><b>Not connected yet</b><p>This server does not have the GST screen yet. Update the APItracker backend.</p><button type="button" class="btn small" data-action="gst-retry">Check again</button></div>',
+      error: `<div class="empty"><b>Couldn’t load GST checks</b><p>${esc(gst.message)}</p><button type="button" class="btn small" data-action="gst-retry">Try again</button></div>`,
       idle: '',
     }[gst.status];
     body.innerHTML = box;
     return;
   }
   if (!gst.shell) {
+    const chip = (key, label) => `<button type="button" class="chip${gst.filter === key ? ' active' : ''}" data-gstfilter="${key}">${label}</button>`;
     body.innerHTML = `
-      <div class="stat-tiles">
-        <div class="stat"><div class="label">Total GST hits</div><div class="value" id="gstTotal"></div></div>
-        <div class="stat"><div class="label">Users</div><div class="value" id="gstUsers"></div></div>
-      </div>
+      <div class="stat-tiles gst-tiles" id="gstTiles"></div>
+      <div class="filters gst-filters">${chip('all', 'All')}${chip('verified', 'Verified')}${chip('failed', 'Failed')}${chip('unable', 'Couldn’t verify')}${chip('account', 'Account created')}</div>
       <div class="gst-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="gstSearch" type="search" placeholder="Search name or phone" autocomplete="off" aria-label="Search GST users" value="${esc(gst.q)}">
+        <input id="gstSearch" type="search" placeholder="Search name, phone, GST no or business" autocomplete="off" aria-label="Search GST checks" value="${esc(gst.q)}">
       </div>
-      <div class="gst-card">
+      <div class="gst-card" role="table" aria-label="GST checks per user">
         <div class="gst-grid head" role="row">
-          <button type="button" data-sort="name">User name<i></i></button>
-          <span>Phone no</span>
-          <button type="button" data-sort="hits" class="num">GST API hits<i></i></button>
+          <button type="button" data-sort="name" role="columnheader">User<i></i></button>
+          <span role="columnheader">Phone no</span>
+          <button type="button" data-sort="hits" class="num" role="columnheader">GST checks<i></i></button>
         </div>
         <div id="gstRows" role="rowgroup"></div>
       </div>
       <p id="gstMeta" class="muted small hint"></p>
       <div id="gstMore" class="more-wrap"></div>`;
-    gst.shell = true;
+    gst.shell = true; gst.rowsHtml = '';
   }
   updateGstRows();
 }
 
-function updateGstRows() {
+// Per user, the same rule as the chips (the backend sends the same numbers).
+function gstTotals() {
+  if (gst.totals) return gst.totals;
+  const by = (f) => gst.users.filter(GST_FILTERS[f]).length;
+  return {
+    checks: gst.users.reduce((n, u) => n + u.hits, 0),
+    users: gst.users.length,
+    verified: by('verified'),
+    failed: by('failed'),
+    unable: by('unable'),
+    accounts: by('account'),
+  };
+}
+
+function userLine(u) {
+  const refused = u.gsts.find((g) => g.kind === 'rejected');
+  const bits = [USER_STATUS[u.status].text];
+  if (u.status === 'failed' && refused && refused.reason) bits[0] = `Failed: ${refused.reason}`;
+  if (u.gsts.length > 1) bits.push(`${u.gsts.length} GST numbers`);
+  if (u.failures) bits.push(`${fmtNum(u.failures)} failed`);
+  if (u.lastCheckedAt) bits.push(ago(u.lastCheckedAt));
+  return bits.join(' · ');
+}
+
+// force: a user action (filter, sort, search, open/close). A poll leaves the
+// rows alone when nothing changed, or while text in them is selected.
+function updateGstRows(force) {
   const q = gst.q.trim().toLowerCase();
+  // Phone searches: +91 or a leading 0 still match the stored 10 digits;
+  // digits inside a GST number or business name are not a phone search.
+  const phoneLike = /^[\d\s+()-]+$/.test(q);
+  let qDigits = q.replace(/\D/g, '');
+  if (/^\+\s*91/.test(q)) qDigits = qDigits.slice(2);
+  else if (qDigits.length > 10) qDigits = qDigits.slice(-10);
+  else if (qDigits.length === 11 && qDigits[0] === '0') qDigits = qDigits.slice(1);
   const { key, dir } = gst.sort;
+  const keep = GST_FILTERS[gst.filter] || GST_FILTERS.all;
+  const sorter = {
+    name: (x, y) => x.name.localeCompare(y.name),
+    hits: (x, y) => x.hits - y.hits,
+    last: (x, y) => (Date.parse(x.lastCheckedAt) || 0) - (Date.parse(y.lastCheckedAt) || 0),
+  }[key] || ((x, y) => x.hits - y.hits);
   const list = gst.users
-    .filter((u) => !q || u.name.toLowerCase().includes(q) || u.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '') || '\u0000') || u.phone.includes(q))
-    .sort((x, y) => (key === 'name' ? x.name.localeCompare(y.name) : x.hits - y.hits) * (dir === 'asc' ? 1 : -1));
-  const max = Math.max(1, ...gst.users.map((u) => u.hits));
+    .filter(keep)
+    .filter((u) => !q || u.search.includes(q) || (phoneLike && qDigits.length >= 3 && u.phone.includes(qDigits)))
+    .sort((x, y) => sorter(x, y) * (dir === 'asc' ? 1 : -1));
+  const max = gst.users.reduce((m, u) => Math.max(m, u.hits), 1);
   const shown = list.slice(0, gst.shown);
-  $('#gstTotal').textContent = fmtNum(gst.users.reduce((n, u) => n + u.hits, 0));
-  $('#gstUsers').textContent = fmtNum(gst.users.length);
+
+  const t = gstTotals();
+  const tile = (label, value, cls = '') => `<div class="stat"><div class="label">${label}</div><div class="value ${cls}">${fmtNum(value || 0)}</div></div>`;
+  $('#gstTiles').innerHTML = tile('GST checks', t.checks) + tile('Users', t.users)
+    + tile('Verified', t.verified, 'ok') + tile('Failed', t.failed, t.failed ? 'down' : '')
+    + tile('Couldn’t verify', t.unable, t.unable ? 'warn' : '') + tile('Accounts created', t.accounts, 'ok');
   document.querySelectorAll('.gst-grid.head [data-sort]').forEach((b) => {
-    b.querySelector('i').textContent = b.dataset.sort === key ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+    const active = b.dataset.sort === key;
+    b.querySelector('i').textContent = active ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+    b.setAttribute('aria-sort', active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none');
   });
-  $('#gstRows').innerHTML = shown.length
-    ? shown.map((u) => `
-      <div class="gst-grid gst-row" role="row" style="--p:${Math.round((u.hits / max) * 100)}">
-        <span class="g-name" role="cell">${esc(u.name)}</span>
+
+  const rowsHtml = shown.length
+    ? shown.map((u) => {
+      const open = gst.open.has(u.id);
+      return `
+      <div class="gst-grid gst-row${open ? ' open' : ''}" role="row" tabindex="0" aria-expanded="${open}" data-gst-user="${esc(u.id)}" style="--p:${Math.round((u.hits / max) * 100)}">
+        <span class="g-name" role="cell"><span class="g-title"><span class="dot ${USER_STATUS[u.status].dot}"></span>${esc(u.name)}</span><small class="g-sub">${esc(userLine(u))}</small></span>
         <span class="g-phone" role="cell">${esc(u.phone || '—')}</span>
         <span class="g-hits" role="cell">${fmtNum(u.hits)}</span>
-      </div>`).join('')
-    : `<div class="gst-empty">${gst.users.length ? 'No user matches your search.' : 'No GST API hits recorded yet.'}</div>`;
-  $('#gstMeta').textContent = `${fmtNum(list.length)} of ${fmtNum(gst.users.length)} users${gst.updatedAt ? ` · updated ${ago(gst.updatedAt)}` : ''}`;
+      </div>
+      ${open ? `<div class="gst-detail" role="row"><div role="cell">${u.gsts.map(gstEntry).join('')}</div></div>` : ''}`;
+    }).join('')
+    : `<div class="gst-empty">${gst.users.length ? 'No user matches this search or filter.'
+      : gst.missing ? 'No GST checks recorded yet. They appear once the MRPscan backend with the GST log is deployed and someone signs up.'
+        : 'No GST checks recorded yet.'}</div>`;
+  const rowsEl = $('#gstRows');
+  if (rowsHtml !== gst.rowsHtml) {
+    const sel = window.getSelection();
+    const selecting = Boolean(sel && !sel.isCollapsed && rowsEl.contains(sel.anchorNode));
+    if (force || !selecting) {
+      // Keep keyboard focus on the same row across the redraw.
+      const active = document.activeElement;
+      const focused = active && active.matches && active.matches('[data-gst-user]:focus-visible') ? active.dataset.gstUser : null;
+      rowsEl.innerHTML = rowsHtml;
+      gst.rowsHtml = rowsHtml;
+      const again = focused && rowsEl.querySelector(`[data-gst-user="${CSS.escape(focused)}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }
+  }
+
+  const sortedBy = key === 'last' ? ' · latest check first' : '';
+  $('#gstMeta').textContent = `${fmtNum(list.length)} of ${fmtNum(gst.users.length)} users${sortedBy}${gst.updatedAt ? ` · updated ${ago(gst.updatedAt)}` : ''}${gst.phonesMasked ? ' · phone numbers partly hidden' : ''}${gst.truncated ? ' · only the latest 5,000 GST numbers are shown' : ''}`;
   const rest = list.length - shown.length;
   $('#gstMore').innerHTML = rest > 0 ? `<button type="button" class="btn" data-action="gst-more">Show ${Math.min(100, rest)} more</button>` : '';
+}
+
+// One GST number a user tried: what GSTN returned, or why it failed, and
+// whether an account was created with it.
+function gstEntry(g) {
+  const [cls, label] = GST_KIND[g.kind];
+  const d = g.details;
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push(`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`); };
+  if (d) {
+    if (d.legalName && d.legalName !== d.tradeName) add('Legal name', d.legalName);
+    add('GST status', d.gstStatus);
+    add('Business type', d.businessType);
+    add('Address', d.address && d.address !== 'N/A' ? d.address : '');
+    add('State', [d.stateName, d.pincode].filter(Boolean).join(' · '));
+  }
+  if (g.kind !== 'verified') {
+    add('Reason', g.reason || (g.kind === 'unable' ? 'The GST registry could not be reached' : 'Refused'));
+    add('Error', [g.errorCode, g.statusCode ? `HTTP ${g.statusCode}` : ''].filter(Boolean).join(' · '));
+  }
+  add('Checks', `${fmtNum(g.attempts)} total${g.failures ? ` · ${fmtNum(g.failures)} failed` : ''}`);
+  add('First check', g.firstCheckedAt ? dateTime(g.firstCheckedAt) : '');
+  add('Last check', g.lastCheckedAt ? `${dateTime(g.lastCheckedAt)} (${ago(g.lastCheckedAt)})` : '');
+  if (g.kind === 'verified') add('Verified', g.verifiedAt ? dateTime(g.verifiedAt) : '');
+  else add('Last failure', g.lastFailedAt ? dateTime(g.lastFailedAt) : '');
+  if (g.accountCreatedAt) {
+    // confirmedAt = the GST step created the business; the account exists
+    // once that business finished sign-up.
+    const a = g.account || {};
+    const where = a.found === false ? 'business since deleted'
+      : a.registered ? 'account created (sign-up completed)'
+        : `sign-up not finished${a.step ? ` (${a.step.replace(/_/g, ' ').toLowerCase()})` : ''}`;
+    add('Business', [where, a.name, `GST confirmed ${dateTime(g.accountCreatedAt)}`].filter(Boolean).join(' · '));
+  }
+  if (g.resolvedAt && g.kind !== 'verified') {
+    add('Resolved', `Verified later with ${g.resolvedGstNumber || 'another number'} · ${dateTime(g.resolvedAt)}`);
+  }
+  const title = d ? (d.tradeName || d.legalName) : '';
+  return `
+    <div class="gst-entry ${esc(g.kind)}">
+      <div class="ge-head">
+        <span class="mono ge-no">${esc(g.gstNumber || '—')}</span>
+        ${d && d.isMock ? '<span class="tag test">test data</span>' : ''}
+        <span class="pill ${cls}">${label}</span>
+      </div>
+      ${title ? `<div class="ge-biz">${esc(title)}</div>` : ''}
+      <dl class="kv">${rows.join('')}</dl>
+    </div>`;
+}
+
+function toggleGstUser(id) {
+  if (gst.open.has(id)) gst.open.delete(id); else gst.open.add(id);
+  updateGstRows(true);
 }
 
 // ---------- data flow ----------
@@ -469,7 +660,8 @@ async function refresh() {
     }
     render();
     if (state.tab === 'issues') await loadIssues();
-    if (state.tab === 'gst') await loadGst(true);
+    // The server caches GST data for 30 s: no need to ask more often than every 20 s.
+    if (state.tab === 'gst' && Date.now() - (gst.loadedAt || 0) >= 20000) await loadGst(true);
   } catch (err) {
     const banner = $('#banner');
     banner.hidden = false;
@@ -547,19 +739,38 @@ document.addEventListener('click', (e) => {
     if (tabBtn) tabBtn.click();
     return;
   }
-  const sort = e.target.closest('[data-sort]');
+  const gstUser = e.target.closest('[data-gst-user]');
+  if (gstUser) {
+    const sel = window.getSelection();
+    if (e.detail > 1 || (sel && !sel.isCollapsed && gstUser.contains(sel.anchorNode))) return;
+    toggleGstUser(gstUser.dataset.gstUser);
+    return;
+  }
+  const gstChip = e.target.closest('[data-gstfilter]');
+  if (gstChip) {
+    gst.filter = gstChip.dataset.gstfilter;
+    document.querySelectorAll('[data-gstfilter]').forEach((c) => c.classList.toggle('active', c === gstChip));
+    gst.shown = 100;
+    updateGstRows(true);
+    return;
+  }
+  const sort = e.target.closest('.gst-grid.head [data-sort]');
   if (sort) {
     const k = sort.dataset.sort;
-    gst.sort = gst.sort.key === k ? { key: k, dir: gst.sort.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'name' ? 'asc' : 'desc' };
+    // first tap: natural order, second: reversed, third: back to latest check first.
+    const natural = k === 'name' ? 'asc' : 'desc';
+    if (gst.sort.key !== k) gst.sort = { key: k, dir: natural };
+    else if (gst.sort.dir === natural) gst.sort = { key: k, dir: natural === 'asc' ? 'desc' : 'asc' };
+    else gst.sort = { key: 'last', dir: 'desc' };
     gst.shown = 100;
-    updateGstRows();
+    updateGstRows(true);
     return;
   }
   const btn = e.target.closest('[data-action]');
   if (btn) {
     const { action, id } = btn.dataset;
     if (action === 'gst-retry') loadGst();
-    if (action === 'gst-more') { gst.shown += 100; updateGstRows(); }
+    if (action === 'gst-more') { gst.shown += 100; updateGstRows(true); }
     if (action === 'check') runCheck([id]);
     if (action === 'meta') openMeta(id);
     if (action === 'notify-test') sendTestUpdate(btn);
@@ -598,9 +809,16 @@ document.addEventListener('toggle', (e) => {
 }, true);
 
 $('#checkAll').addEventListener('click', () => runCheck(null));
+// GST rows open with Enter or Space too.
+document.addEventListener('keydown', (e) => {
+  const row = e.target.closest && e.target.closest('[data-gst-user]');
+  if (!row || (e.key !== 'Enter' && e.key !== ' ')) return;
+  e.preventDefault();
+  toggleGstUser(row.dataset.gstUser);
+});
 document.addEventListener('input', (e) => {
   if (e.target.id !== 'gstSearch') return;
-  gst.q = e.target.value; gst.shown = 100; updateGstRows();
+  gst.q = e.target.value; gst.shown = 100; updateGstRows(true);
 });
 // Inside the phone app: change which tracker server it opens.
 if (window.APITrackerShell) {

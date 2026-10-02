@@ -71,6 +71,10 @@ In `backend/.env` on the server:
 
 Update later: `git pull && npm ci --omit=dev && pm2 restart apitracker` (run in `backend/`; `npm ci` matters when packages changed, e.g. nodemailer for email updates).
 
+### GST screen
+
+The **GST** tab lists every GST check made during MRPscan sign-up (the backend's `gst_verifications`), one row per user (mobile) with the GST numbers they tried: what GSTN returned on a pass, the reason on a failure, attempt and failure counts, and whether the business finished sign-up. Read-only, cached for 30 s, through one shared database connection. `MONGODB_READ_URI` (a read-only Atlas user) is used instead of `MONGODB_URI` when set. Phone numbers are partly hidden because the dashboard is public; `GST_SHOW_PHONES=true` shows them in full.
+
 ### Email updates
 
 Set `ALERT_EMAIL_TO` (comma-separated) in `backend/.env`. The tracker then emails, from `ALERT_GMAIL_USER` (a Gmail address + `ALERT_GMAIL_APP_PASSWORD`, an App Password from myaccount.google.com/apppasswords; needs 2-Step Verification) or, if that is empty, over the SMTP account the backend sends invoices with (`SMTP_*`), when an issue opens, gets worse or is resolved, and sends a daily summary after `DAILY_SUMMARY_HOUR` IST (default 9, `off` to skip). **Send test update** in the SMTP row sends the summary once (at most every 10 minutes).

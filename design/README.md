@@ -20,21 +20,34 @@ the notes, screenshots and a no-API-key preview. No backend files were changed.
   search (name or phone), sort (tap a header) and a small bar per row.
 - Page scroll bar hidden on phone widths; scrolling is unchanged.
 
-## GST tracker: what the backend needs to provide
+## GST tracker: data
 
-The GST tracker backend is not built yet. The screen expects:
+Built: `GET /api/gst` (backend/src/gst.js) reads the MRPscan backend's `gst_verifications` collection — one row
+per mobile + GST number for every GST check made during Create Account — and groups it per user:
 
 ```
-GET /api/gst
 {
-  "users": [ { "id": "u1", "name": "Rakesh Soni", "phone": "9928688065", "hits": 42 } ],
-  "updatedAt": "2026-10-01T09:30:00.000Z"      // optional
+  "users": [{
+    "id": "u3f9…", "name": "Ravi Gupta", "phone": "98••••••10",   // full only with GST_SHOW_PHONES=true
+    "hits": 3, "failures": 1, "status": "account",   // account (sign-up done) | started | verified | failed | unable
+    "firstCheckedAt": "…", "lastCheckedAt": "…",
+    "gsts": [{
+      "gstNumber": "27AABCG1234F1Z5", "kind": "verified",      // verified | rejected | unable (registry down)
+      "attempts": 2, "failures": 1, "reason": "", "errorCode": "", "statusCode": null,
+      "details": { "legalName", "tradeName", "businessType", "address", "stateName", "pincode", "gstStatus", "isMock" },
+      "verifiedAt", "lastFailedAt", "firstCheckedAt", "lastCheckedAt", "resolvedAt", "resolvedGstNumber",
+      "accountCreatedAt": "…", "account": { "found": true, "name": "Gupta Jewellers", "registered": true, "step": "COMPLETED" }
+    }]
+  }],
+  "totals": { "checks", "users", "gstNumbers", "verified", "failed", "unable", "accounts" },
+  "updatedAt": "…", "truncated": false, "collectionMissing": false, "phonesMasked": true
 }
 ```
 
-`hits` = how many times that user has called the GST verification API. Until the route exists the server
-answers 404 and the screen shows "Not connected yet"; once it returns data the grid fills in on its own.
-Other errors show "Couldn't load GST hits" with a Try again button.
+`hits` = GST checks by that user. Totals count users, like the chips (All / Verified / Failed / Couldn’t verify /
+Account created). "Account created" = the business finished sign-up; a confirmed GST without that is "started".
+The screen shows six totals, the chips, search over name, phone, GST number and business name, and each row opens into one card per GST number.
+A 404 (an older server) still shows "Not connected yet"; a 503 shows the database error.
 
 ## Known limits
 - Checked in a browser against fake data only; not yet run in the Android WebView or against the real backend.

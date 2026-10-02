@@ -155,9 +155,45 @@ const incidents = [
     log: [{ t: ago(6 * DAY), level: 'warn', message: 'Slow response: 3,100 ms' }, { t: ago(6 * DAY - 70 * 60000), level: 'ok', message: 'Recovered' }] },
 ];
 
-// GST tracker (backend not built yet): { users: [{ id, name, phone, hits }], updatedAt }
+// GST tracker: same shape as the backend's GET /api/gst (backend/src/gst.js), made-up people.
 const GST_NAMES = ['Rakesh Soni', 'Meera Agarwal', 'Vikram Chauhan', 'Pooja Mehta', 'Arjun Verma', 'Sunita Jain', 'Imran Qureshi', 'Harpreet Kaur', 'Anil Bansal', 'Neha Kapoor', 'Sandeep Rathore', 'Kavita Joshi', 'Mohit Saxena', 'Farhan Ali', 'Divya Nair', 'Gurpreet Singh', 'Lata Deshmukh', 'Yogesh Patil', 'Rina Dutta', 'Tarun Malhotra', 'Shalini Iyer', 'Deepak Yadav', 'Bhavna Shah', 'Kunal Mehra', 'Seema Pandey', 'Ritesh Kumar', 'Anjali Gupta', 'Manoj Tiwari'];
-const GST_USERS = GST_NAMES.map((name, i) => ({ id: 'u' + (i + 1), name, phone: '9' + String(100000000 + ((i * 7919231) % 899999999)).padStart(9, '0'), hits: i === 5 ? 0 : Math.round(380 / (i + 1.4) + ((i * 37) % 11)) }));
+const STATES = [['27', 'Maharashtra', '400002'], ['24', 'Gujarat', '380001'], ['08', 'Rajasthan', '302001'], ['07', 'Delhi', '110006']];
+function gstEntryFor(name, i, n) {
+  const [code, stateName, pincode] = STATES[(i + n) % STATES.length];
+  const gstNumber = `${code}AAB${String.fromCharCode(65 + (i % 26))}${String(1000 + i * 37 + n).slice(-4)}F1Z${n + 1}`;
+  const shop = `${name.split(' ')[1]} Jewellers`;
+  const at = ago((i * 5 + n) * 3600000 + 60000);
+  const kind = i % 7 === 3 ? 'unable' : (i % 4 === 1 && n === 0) ? 'rejected' : 'verified';
+  const attempts = 1 + ((i + n) % 3);
+  return {
+    gstNumber, kind, attempts, failures: kind === 'verified' ? attempts - 1 : attempts,
+    reason: kind === 'rejected' ? 'The provided GST number is invalid.' : kind === 'unable' ? 'The GST registry could not be reached to check this number. Please try again in a few minutes.' : '',
+    errorCode: kind === 'rejected' ? 'INVALID_GST_NUMBER' : kind === 'unable' ? 'GST_VERIFICATION_FAILED' : '',
+    statusCode: kind === 'rejected' ? 400 : kind === 'unable' ? 502 : null,
+    details: kind === 'verified' ? { legalName: `${shop} Pvt. Ltd.`, tradeName: shop, businessType: 'Regular', address: `${10 + i}, Main Bazaar, ${stateName}`, stateName, pincode, gstStatus: i % 9 === 2 ? 'Cancelled' : 'Active', isMock: false } : null,
+    firstCheckedAt: at, lastCheckedAt: at, verifiedAt: kind === 'verified' ? at : null, lastFailedAt: kind === 'verified' ? null : at,
+    resolvedAt: null, resolvedGstNumber: '',
+    accountCreatedAt: kind === 'verified' && i % 3 !== 0 ? at : null,
+    account: kind === 'verified' && i % 3 !== 0 ? { found: true, name: shop, registered: i % 2 === 0, step: i % 2 === 0 ? 'COMPLETED' : 'GST_CONFIRMED' } : null,
+  };
+}
+const GST_USERS = GST_NAMES.map((name, i) => {
+  const gsts = Array.from({ length: i % 5 === 1 ? 2 : 1 }, (_, n) => gstEntryFor(name, i, n));
+  const status = gsts.some((g) => g.account && g.account.registered) ? 'account'
+    : gsts.some((g) => g.accountCreatedAt) ? 'started'
+      : gsts.some((g) => g.kind === 'verified') ? 'verified' : gsts.some((g) => g.kind === 'rejected') ? 'failed' : 'unable';
+  const phone = '9' + String(100000000 + ((i * 7919231) % 899999999)).padStart(9, '0');
+  return {
+    id: 'u' + (i + 1), name, phone: `${phone.slice(0, 2)}••••••${phone.slice(-2)}`,
+    hits: gsts.reduce((s, g) => s + g.attempts, 0), failures: gsts.reduce((s, g) => s + g.failures, 0), status,
+    firstCheckedAt: gsts[gsts.length - 1].firstCheckedAt, lastCheckedAt: gsts[0].lastCheckedAt, gsts,
+  };
+});
+const gstBy = (...st) => GST_USERS.filter((u) => st.includes(u.status)).length;
+const GST_TOTALS = {
+  checks: GST_USERS.reduce((s, u) => s + u.hits, 0), users: GST_USERS.length, gstNumbers: GST_USERS.reduce((s, u) => s + u.gsts.length, 0),
+  verified: gstBy('account', 'started', 'verified'), failed: gstBy('failed'), unable: gstBy('unable'), accounts: gstBy('account'),
+};
 
 const checking = new Set();
 const lastRun = { startedAt: ago(7 * 60000 + 4000), finishedAt: ago(7 * 60000), skipped: null };
@@ -188,7 +224,7 @@ http.createServer(async (req, res) => {
   const p = url.pathname;
   if (p === '/api/health') return send(200, { ok: true });
   if (p === '/api/overview') return send(200, overview());
-  if (p === '/api/gst') return setTimeout(() => send(200, { users: GST_USERS, updatedAt: ago(4 * 60000) }), 250);
+  if (p === '/api/gst') return setTimeout(() => send(200, { users: GST_USERS, totals: GST_TOTALS, updatedAt: ago(4 * 60000), truncated: false, collectionMissing: false, phonesMasked: true }), 250);
   if (p === '/api/check' && req.method === 'POST') {
     const { ids } = await readBody(req);
     const list = Array.isArray(ids) && ids.length ? ids : SERVICES.map((s) => s.id);

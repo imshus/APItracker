@@ -44,6 +44,8 @@ const settings = {
     return Number.isInteger(n) && n >= 0 && n <= 23 ? n : 9;
   })(),
   dashboardUrl: (process.env.DASHBOARD_URL || 'https://apitracker.mrpscan.com').replace(/\/+$/, ''),
+  // GST screen: full phone numbers only on purpose (the dashboard is public).
+  gstShowPhones: String(process.env.GST_SHOW_PHONES || '').trim().toLowerCase() === 'true',
   // Only for tests against a fake OpenAI; the real API otherwise.
   openaiApiBase: (process.env.OPENAI_API_BASE || 'https://api.openai.com').replace(/\/+$/, ''),
   serveFrontend: String(process.env.SERVE_FRONTEND ?? 'true').toLowerCase() !== 'false',

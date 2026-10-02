@@ -16,6 +16,7 @@ const { Runner } = require('./runner');
 const { evaluate } = require('./evaluate');
 const incidents = require('./incidents');
 const { Notifier } = require('./notify');
+const gst = require('./gst');
 
 const store = new Store(settings.dataFile);
 const runner = new Runner(store, settings);
@@ -155,6 +156,19 @@ app.post('/api/issues/:id/resolve', (req, res) => {
   store.save();
   notifier.afterChange(before);
   res.json({ issue: incident });
+});
+
+// GST screen: every GST check made at MRPscan sign-up, grouped per user
+// (see gst.js). Read-only, cached for 30 s.
+app.get('/api/gst', async (req, res) => {
+  try {
+    const out = await gst.load(runner.readEnv(), { showPhones: settings.gstShowPhones });
+    // Names and phone numbers: no browser or proxy copy.
+    res.set('Cache-Control', 'no-store').status(out.status).json(out.body);
+  } catch (err) {
+    console.error('[gst]', err);
+    res.status(500).json({ error: 'GST data could not be read' });
+  }
 });
 
 // "Send test update" on the dashboard: the summary email, at most once per
