@@ -1,6 +1,7 @@
 'use strict';
 
-// Follow-up emails over the backend's SMTP account (see mailer.js):
+// Follow-up emails, sent from a Gmail account (ALERT_GMAIL_USER + an App
+// Password) or else over the backend's SMTP account (see mailer.js):
 // - when an issue opens, gets worse (warning → down) or is resolved, one email
 //   per run that changed something;
 // - a daily summary at DAILY_SUMMARY_HOUR (IST) with every service's status,
@@ -86,11 +87,21 @@ class Notifier {
     return this.store.state.notify;
   }
 
+  // The account the updates go out from: the Gmail sender when
+  // ALERT_GMAIL_USER is set, else the backend's SMTP account.
+  sender() {
+    const { alertGmailUser: user, alertGmailPass: pass } = this.settings;
+    if (user) return { via: 'Gmail', host: 'smtp.gmail.com', port: 465, secure: true, user, pass, from: user };
+    return { via: 'backend SMTP', ...smtpConfig(this.readEnv() || {}) };
+  }
+
   status() {
     const n = this.store.state.notify || {};
+    const s = this.sender();
     return {
       enabled: this.enabled,
       to: this.settings.alertEmailTo.map(maskEmail),
+      from: s.from ? `${maskEmail(s.from.replace(/^.*<|>.*$/g, ''))} (${s.via})` : null,
       dailyHour: this.settings.dailySummaryHour,
       lastSentAt: n.lastSentAt || null,
       lastSubject: n.lastSubject || null,
@@ -100,8 +111,9 @@ class Notifier {
   }
 
   async send(subject, text, html) {
-    const cfg = smtpConfig(this.readEnv() || {});
-    if (!cfg.host || !cfg.from) throw new Error('SMTP_HOST / SMTP_FROM are not set in the watched .env');
+    const cfg = this.sender();
+    if (cfg.via === 'Gmail' && !cfg.pass) throw new Error('ALERT_GMAIL_APP_PASSWORD is not set in backend/.env');
+    if (!cfg.host || !cfg.from) throw new Error('No sender: set ALERT_GMAIL_USER in backend/.env, or SMTP_HOST / SMTP_FROM in the watched .env');
     const transport = createTransport(cfg);
     try {
       await transport.sendMail({

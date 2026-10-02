@@ -252,6 +252,7 @@ function emailUpdates(n) {
     <div class="mail-box">
       <b>Email updates → ${esc(n.to.join(', '))}</b>
       <p>An email when an issue opens, gets worse or is resolved${daily}.</p>
+      <p>From ${n.from ? esc(n.from) : '<span class="error">no sender set (ALERT_GMAIL_USER or SMTP_*)</span>'}</p>
       ${last}
       <button type="button" class="btn small ghost" data-action="notify-test">Send test update</button>
     </div>`;

@@ -33,6 +33,10 @@ const settings = {
   // Email updates over the backend's SMTP account: who gets them, the IST
   // hour of the daily summary ("off" = issue emails only) and the link in them.
   alertEmailTo: list(process.env.ALERT_EMAIL_TO),
+  // Optional Gmail sender for the updates. Google shows App Passwords in
+  // groups of four; the spaces are not part of it.
+  alertGmailUser: String(process.env.ALERT_GMAIL_USER || '').trim(),
+  alertGmailPass: String(process.env.ALERT_GMAIL_APP_PASSWORD || '').replace(/\s+/g, ''),
   dailySummaryHour: (() => {
     const v = String(process.env.DAILY_SUMMARY_HOUR ?? '9').trim().toLowerCase();
     if (v === '' || v === 'off') return -1;

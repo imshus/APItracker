@@ -73,7 +73,7 @@ Update later: `git pull && npm ci --omit=dev && pm2 restart apitracker` (run in 
 
 ### Email updates
 
-Set `ALERT_EMAIL_TO` (comma-separated) in `backend/.env`. The tracker then emails, over the same SMTP account the backend sends invoices with (`SMTP_*`), when an issue opens, gets worse or is resolved, and sends a daily summary after `DAILY_SUMMARY_HOUR` IST (default 9, `off` to skip). **Send test update** in the SMTP row sends the summary once (at most every 10 minutes).
+Set `ALERT_EMAIL_TO` (comma-separated) in `backend/.env`. The tracker then emails, from `ALERT_GMAIL_USER` (a Gmail address + `ALERT_GMAIL_APP_PASSWORD`, an App Password from myaccount.google.com/apppasswords; needs 2-Step Verification) or, if that is empty, over the SMTP account the backend sends invoices with (`SMTP_*`), when an issue opens, gets worse or is resolved, and sends a daily summary after `DAILY_SUMMARY_HOUR` IST (default 9, `off` to skip). **Send test update** in the SMTP row sends the summary once (at most every 10 minutes).
 
 ## Phone app (APK)
 
