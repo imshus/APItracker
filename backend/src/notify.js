@@ -15,6 +15,7 @@ const RANK = { ok: 0, warn: 1, down: 2 };
 const TEST_GAP_MS = 10 * 60 * 1000;
 const SUMMARY_RETRY_MS = 30 * 60 * 1000;
 const SENDER_NAME = 'MRPscan API Monitor';
+const REPORT_MAILS_PER_HOUR = 10;
 
 function istNow(date = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -53,7 +54,10 @@ function expiryText(s) {
   const e = (s.expiries || []).filter((x) => !x.info).sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0];
   if (!e) return '';
   const date = new Date(e.at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
-  return `${e.label}: ${date} (${e.daysLeft < 0 ? 'expired' : `in ${e.daysLeft} days`})`;
+  // The date itself decides (as evaluate() does): hours past it is expired,
+  // not "in 0 days".
+  const past = Date.parse(e.at) < Date.now();
+  return `${e.label}: ${date} (${past ? 'expired' : `in ${e.daysLeft} day${e.daysLeft === 1 ? '' : 's'}`})`;
 }
 
 class Notifier {
@@ -65,6 +69,16 @@ class Notifier {
     this.settings = settings;
     this.readEnv = readEnv;
     this.summary = summary;
+    // Issues from before this way of tracking count as already emailed, so
+    // the first run after an update does not mail every open issue again.
+    if (!this.record.trackedOnIssues) {
+      for (const i of this.store.state.incidents) {
+        if (i.resolvedAt) i.notifiedResolved = true;
+        else i.notifiedLevel = i.level;
+      }
+      this.record.trackedOnIssues = true;
+      this.store.save();
+    }
   }
 
   get enabled() {
@@ -153,26 +167,54 @@ class Notifier {
     }
   }
 
-  // Open issues and their level, before a change.
-  snapshot() {
-    return new Map(this.store.state.incidents.filter((i) => !i.resolvedAt).map((i) => [i.id, i.level]));
-  }
-
   // Callers do not await these two; they must never reject.
-  afterChange(before) {
-    return this.changeMail(before).catch((err) => console.error('[notify] change email:', err));
+  afterChange() {
+    return this.changeMail().catch((err) => console.error('[notify] change email:', err));
   }
 
   maybeDailySummary() {
     return this.dailyMail().catch((err) => console.error('[notify] daily summary:', err));
   }
 
-  async changeMail(before) {
-    if (!this.enabled) return;
+  // What each issue has already been emailed as lives on the issue itself
+  // (notifiedLevel / notifiedResolved), and is marked before anything is
+  // awaited: a run and a dashboard click at the same moment cannot both
+  // send the same change. Marked even while email is off, so turning it on
+  // later does not mail the backlog.
+  takeChanges() {
     const list = this.store.state.incidents;
-    const opened = list.filter((i) => !i.resolvedAt && !before.has(i.id));
-    const worse = list.filter((i) => !i.resolvedAt && before.has(i.id) && RANK[i.level] > RANK[before.get(i.id)]);
-    const resolved = list.filter((i) => i.resolvedAt && before.has(i.id));
+    const opened = list.filter((i) => !i.resolvedAt && !i.notifiedLevel);
+    const worse = list.filter((i) => !i.resolvedAt && i.notifiedLevel && RANK[i.level] > RANK[i.notifiedLevel]);
+    const resolved = list.filter((i) => i.resolvedAt && i.notifiedLevel && !i.notifiedResolved);
+    // Opened and closed between two emails: nobody was told it opened.
+    const silent = list.filter((i) => i.resolvedAt && !i.notifiedLevel && !i.notifiedResolved);
+    for (const i of [...opened, ...worse]) i.notifiedLevel = i.level;
+    for (const i of [...resolved, ...silent]) i.notifiedResolved = true;
+    if (opened.length || worse.length || resolved.length || silent.length) this.store.save();
+    return { opened, worse, resolved };
+  }
+
+  // Problems posted to the public POST /api/issues: at most this many emails
+  // an hour, so the endpoint cannot be used to flood the team's inboxes.
+  allowReportMail() {
+    const rec = this.record;
+    const hourAgo = Date.now() - 3600 * 1000;
+    rec.reportMails = (rec.reportMails || []).filter((t) => Date.parse(t) > hourAgo);
+    if (rec.reportMails.length >= REPORT_MAILS_PER_HOUR) return false;
+    rec.reportMails.push(new Date().toISOString());
+    return true;
+  }
+
+  async changeMail() {
+    let { opened, worse, resolved } = this.takeChanges();
+    if (!this.enabled) return;
+    const isReport = (i) => i.source === 'report';
+    if ([...opened, ...worse, ...resolved].some(isReport) && !this.allowReportMail()) {
+      console.warn('[notify] report emails limited to', REPORT_MAILS_PER_HOUR, 'an hour; report changes not emailed');
+      opened = opened.filter((i) => !isReport(i));
+      worse = worse.filter((i) => !isReport(i));
+      resolved = resolved.filter((i) => !isReport(i));
+    }
     if (!opened.length && !worse.length && !resolved.length) return;
 
     const ctx = this.context();
@@ -186,6 +228,9 @@ class Notifier {
       title: i.title,
       openedAt: i.openedAt,
       resolvedAt: i.resolvedAt,
+      // check (a clean check) | manual (dashboard button) | untracked
+      resolvedBy: i.resolvedBy || (i.source === 'report' ? 'manual' : 'check'),
+      resolveNote: i.resolveNote || null,
       source: i.source,
       service: service(i),
       ...extra,

@@ -135,7 +135,6 @@ app.post('/api/issues', (req, res) => {
   if (!message || !service) return res.status(400).json({ error: 'service and message are required' });
   const level = body.level === 'warn' ? 'warn' : 'down';
   const known = runner.services().find((s) => s.id === service || s.name.toLowerCase() === service.toLowerCase());
-  const before = notifier.snapshot();
   const incident = incidents.report(store.state, {
     serviceId: known ? known.id : service,
     serviceName: known ? known.name : service,
@@ -144,17 +143,16 @@ app.post('/api/issues', (req, res) => {
     detail: body.detail ? String(body.detail).slice(0, 2000) : null,
   }, new Date().toISOString());
   store.save();
-  notifier.afterChange(before);
+  notifier.afterChange();
   res.status(201).json({ id: incident.id, count: incident.count });
 });
 
 app.post('/api/issues/:id/resolve', (req, res) => {
   const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
-  const before = notifier.snapshot();
   const incident = incidents.resolve(store.state, req.params.id, new Date().toISOString(), note);
   if (!incident) return res.status(404).json({ error: 'No such issue' });
   store.save();
-  notifier.afterChange(before);
+  notifier.afterChange();
   res.json({ issue: incident });
 });
 
@@ -206,13 +204,12 @@ app.put('/api/meta/:id', (req, res) => {
   else store.state.meta[service.id] = meta;
 
   const result = store.state.results[service.id];
-  const openBefore = notifier.snapshot();
   if (result) {
     const ev = evaluate(result, store.state.meta[service.id], settings);
     incidents.syncCheck(store.state, service, ev, new Date().toISOString(), null, { seen: false });
   }
   store.save();
-  notifier.afterChange(openBefore);
+  notifier.afterChange();
   // A new balance changes what some checks compute (OpenAI counts it down by
   // real spend), so check that service again straight away.
   if (amountsChanged) runner.run({ ids: [service.id], force: true });

@@ -36,6 +36,7 @@ function syncCheck(state, service, ev, at, error, { seen = true } = {}) {
   if (!bad) {
     if (open) {
       open.resolvedAt = at;
+      open.resolvedBy = 'check';
       addLog(open, at, 'ok', 'Recovered');
     }
     return;
@@ -114,6 +115,8 @@ function resolve(state, id, at, note) {
   const incident = state.incidents.find((i) => i.id === id);
   if (!incident || incident.resolvedAt) return incident || null;
   incident.resolvedAt = at;
+  incident.resolvedBy = 'manual';
+  incident.resolveNote = note || null;
   addLog(incident, at, 'ok', note || 'Marked resolved');
   return incident;
 }
@@ -126,6 +129,7 @@ function closeUntracked(state, trackedIds, at) {
   const stale = state.incidents.filter((i) => i.source === 'check' && !i.resolvedAt && !tracked.has(i.serviceId));
   for (const incident of stale) {
     incident.resolvedAt = at;
+    incident.resolvedBy = 'untracked';
     addLog(incident, at, 'ok', 'No longer tracked');
   }
   return stale.length;

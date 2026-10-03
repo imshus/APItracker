@@ -81,7 +81,11 @@ class Runner {
       return;
     }
     const all = listServices(env, this.settings);
-    if (incidents.closeUntracked(state, all.map((s) => s.id), startedAt)) this.store.save();
+    if (incidents.closeUntracked(state, all.map((s) => s.id), startedAt)) {
+      this.store.save();
+      // Say so: the alert promised another email when it is closed.
+      if (this.notifier) this.notifier.afterChange();
+    }
     const now = Date.now();
     const chosen = ids || force
       ? all.filter((s) => (!ids || ids.includes(s.id)) && !this.recent(s.id, now))
@@ -96,7 +100,6 @@ class Runner {
     }
 
     const secrets = secretValues(env);
-    const before = this.notifier ? this.notifier.snapshot() : null;
     chosen.forEach((s) => this.checking.add(s.id));
     await Promise.all(chosen.map(async (service) => {
       const r = new Report();
@@ -118,7 +121,7 @@ class Runner {
     this.store.save();
     // Issues opened, worse or resolved by this run → one email (not awaited:
     // a slow mail server must not hold up the next run).
-    if (before) this.notifier.afterChange(before);
+    if (this.notifier) this.notifier.afterChange();
   }
 
   start() {

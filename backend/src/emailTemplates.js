@@ -46,10 +46,14 @@ const STATUS = {
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// One line, at most n characters; long masked runs (a provider echoing
+// "sk-proj-****…****") shortened so they stay readable.
 const clip = (v, n) => {
-  const s = String(v ?? '').replace(/\s+/g, ' ').trim();
+  const s = String(v ?? '').replace(/\s+/g, ' ').replace(/[*•]{5,}/g, '****').trim();
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 };
+// Long words, URLs and keys wrap instead of widening the email past a phone.
+const WRAP = 'word-break:break-word;overflow-wrap:anywhere;';
 // Only http(s) links go into an href.
 const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? String(u) : '');
 
@@ -134,6 +138,9 @@ function footerText(ctx) {
 
 // One change: an issue that opened, got worse or was resolved, with the
 // service it belongs to (name, purpose, provider links) when known.
+// resolvedBy says what a "resolved" may claim: check = a clean check,
+// manual = the dashboard's Mark resolved (not re-checked), untracked = the
+// service was removed from APItracker.
 function changeCard(c, now) {
   const lv = LEVEL[c.kind];
   const svc = c.service || {};
@@ -142,26 +149,37 @@ function changeCard(c, now) {
   const row = (k, v) => rows.push(`
           <tr>
             <td valign="top" width="96" style="padding:4px 10px 4px 0;font-family:${SANS};font-size:12.5px;color:${C.label};">${esc(k)}</td>
-            <td valign="top" style="padding:4px 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.text};">${v}</td>
+            <td valign="top" style="padding:4px 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.text};${WRAP}">${v}</td>
           </tr>`);
   row(c.kind === 'ok' ? 'Was' : 'Problem', esc(clip(c.title, 300)));
   if (svc.purpose) row('Affects', esc(clip(svc.purpose, 160)));
   if (c.kind === 'ok') {
-    row('Back since', esc(istDateTime(c.resolvedAt || now)));
-    row('Lasted', esc(duration(c.openedAt, c.resolvedAt || now)));
+    const at = c.resolvedAt || now;
+    if (c.resolvedBy === 'manual') {
+      row('Marked resolved', `${esc(istDateTime(at))} on the dashboard (not re-checked)`);
+      if (c.resolveNote) row('Note', esc(clip(c.resolveNote, 300)));
+    } else if (c.resolvedBy === 'untracked') {
+      row('Closed', `${esc(istDateTime(at))}: no longer tracked by APItracker`);
+    } else {
+      row('Back since', esc(istDateTime(at)));
+    }
+    row('Lasted', esc(duration(c.openedAt, at)));
   } else {
     row('Since', esc(istDateTime(c.openedAt)));
     if (c.worse) row('Change', 'Got worse: now down');
-    if (c.source === 'report') row('Reported by', 'the MRPscan app');
+    // Anyone can post to /api/issues: never claim who sent it.
+    if (c.source === 'report') row('Source', 'Reported via the API, not confirmed by a check');
   }
   if (link) row('Provider', `<a href="${esc(link[1])}" style="color:${C.brand};font-weight:700;text-decoration:none;">${esc(link[0])} ↗</a>`);
+  const word = c.kind !== 'ok' ? (c.kind === 'down' ? 'Down' : 'Warning')
+    : c.resolvedBy === 'manual' ? 'Marked resolved' : c.resolvedBy === 'untracked' ? 'Closed' : 'Resolved';
   return `
   <tr><td style="padding:8px 24px 0;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${C.border};border-left:4px solid ${lv.color};border-radius:14px;">
       <tr><td style="padding:12px 16px 4px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td style="font-family:${SANS};font-size:15.5px;font-weight:800;color:${C.text};">${esc(c.serviceName)}</td>
-          <td align="right">${pill(c.kind === 'ok' ? 'Resolved' : c.kind === 'down' ? 'Down' : 'Warning', lv.color, lv.bg)}</td>
+          <td style="font-family:${SANS};font-size:15.5px;font-weight:800;color:${C.text};${WRAP}">${esc(clip(c.serviceName, 80))}</td>
+          <td align="right">${pill(word, lv.color, lv.bg)}</td>
         </tr></table>
       </td></tr>
       <tr><td style="padding:2px 16px 12px;">
@@ -191,7 +209,8 @@ const countStatuses = (services) => ({
 
 /**
  * changes: [{ kind: 'down'|'warn'|'ok', worse?, serviceName, title, openedAt,
- *             resolvedAt?, source, service?: { purpose, links } }]
+ *             resolvedAt?, resolvedBy?: 'check'|'manual'|'untracked',
+ *             resolveNote?, source: 'check'|'report', service?: { purpose, links } }]
  * ctx: { services (overview services), openIssues, dashboardUrl, from, now }
  */
 function alertEmail(changes, ctx) {
@@ -199,35 +218,50 @@ function alertEmail(changes, ctx) {
   const down = changes.filter((c) => c.kind === 'down');
   const warn = changes.filter((c) => c.kind === 'warn');
   const ok = changes.filter((c) => c.kind === 'ok');
+  // Only a failing check is "URGENT" (and high priority); a problem posted to
+  // the public /api/issues is shown as reported, not confirmed.
+  const confirmedDown = down.some((c) => c.source !== 'report');
   const top = down.length ? 'down' : warn.length ? 'warn' : 'ok';
   const lv = LEVEL[top];
   const one = changes.length === 1 ? changes[0] : null;
+  const name = (c) => clip(c.serviceName, 80);
+  const allRecovered = ok.length && ok.every((c) => c.resolvedBy !== 'manual' && c.resolvedBy !== 'untracked');
 
   const headline = one
-    ? one.kind === 'down' ? `${one.serviceName} is down`
-      : one.kind === 'warn' ? `${one.serviceName} needs attention`
-        : `${one.serviceName} is back to normal`
-    : [down.length && `${down.length} down`, warn.length && `${warn.length} need${warn.length === 1 ? 's' : ''} attention`, ok.length && `${ok.length} resolved`]
+    ? one.kind === 'down' ? (confirmedDown ? `${name(one)} is down` : `Problem reported for ${name(one)}`)
+      : one.kind === 'warn' ? `${name(one)} needs attention`
+        : one.resolvedBy === 'manual' ? `${name(one)} marked resolved`
+          : one.resolvedBy === 'untracked' ? `${name(one)} is no longer tracked`
+            : `${name(one)} is back to normal`
+    : [down.length && `${down.length} down`, warn.length && `${warn.length} need${warn.length === 1 ? 's' : ''} attention`, ok.length && `${ok.length} ${allRecovered ? 'resolved' : 'closed'}`]
       .filter(Boolean).join(' · ');
-  const tag = top === 'down' ? 'URGENT' : top === 'warn' ? 'Attention' : 'Resolved';
+  const tag = top === 'down' ? (confirmedDown ? 'URGENT' : 'Reported') : top === 'warn' ? 'Attention' : allRecovered ? 'Resolved' : 'Closed';
   // Short enough for a phone inbox; the problem itself is the preview line.
   const subject = clip(`${tag} · ${headline} — MRPscan API Monitor`, 120);
-  const intro = top === 'down'
-    ? 'Something MRPscan depends on has stopped working. Customers may be affected until it is fixed.'
-    : top === 'warn'
-      ? 'Something needs attention soon, before it turns into an outage.'
-      : 'Everything below is working again. No action needed.';
+  const banner = { URGENT: 'Urgent · API down', Reported: 'Reported problem · not confirmed', Attention: 'Needs attention', Resolved: 'Back to normal', Closed: 'Issue closed' }[tag];
+  const intro = {
+    URGENT: 'Something MRPscan depends on has stopped working. Customers may be affected until it is fixed.',
+    Reported: 'A problem was reported through the APItracker API. No check has confirmed it yet.',
+    Attention: 'Something needs attention soon, before it turns into an outage.',
+    Resolved: 'Everything below is working again. No action needed.',
+    Closed: 'These issues were closed. Read below how each one was closed.',
+  }[tag];
+  const after = top !== 'ok' ? 'You will get another email when this is resolved.'
+    : allRecovered ? 'This was checked again and is working.'
+      : 'If a check still fails, a new alert will follow.';
   const preheader = one ? clip(one.title, 120) : intro;
   const counts = countStatuses(ctx.services || []);
   const order = { down: 0, warn: 1, ok: 2 };
   const sorted = changes.slice().sort((a, b) => order[a.kind] - order[b.kind]);
+  const word = (c) => (c.kind === 'down' ? 'DOWN' : c.kind === 'warn' ? 'WARNING'
+    : c.resolvedBy === 'manual' ? 'MARKED RESOLVED' : c.resolvedBy === 'untracked' ? 'CLOSED' : 'RESOLVED');
 
   const body = `
   <tr><td style="padding:20px 24px 4px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${lv.bg};border-radius:14px;"><tr>
       <td style="padding:16px 18px;">
-        <div style="font-family:${SANS};font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${lv.color};">${esc(tag === 'URGENT' ? 'Urgent · API down' : tag === 'Attention' ? 'Needs attention' : 'Back to normal')}</div>
-        <div style="font-family:${SERIF};font-size:22px;font-weight:800;line-height:1.25;color:${C.text};margin-top:4px;">${esc(headline)}</div>
+        <div style="font-family:${SANS};font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${lv.color};">${esc(banner)}</div>
+        <div style="font-family:${SERIF};font-size:22px;font-weight:800;line-height:1.25;color:${C.text};margin-top:4px;${WRAP}">${esc(headline)}</div>
         <div style="font-family:${SANS};font-size:13px;line-height:1.5;color:${C.text};margin-top:6px;">${esc(intro)}</div>
       </td>
     </tr></table>
@@ -236,7 +270,7 @@ ${sorted.map((c) => changeCard(c, now)).join('')}
 ${statusStrip(counts, ctx.openIssues || 0)}
   <tr><td style="padding:20px 24px 4px;">${button('Open APItracker', ctx.dashboardUrl)}</td></tr>
   <tr><td style="padding:6px 24px 0;font-family:${SANS};font-size:12px;color:${C.label};text-align:center;">
-    ${top === 'ok' ? 'This was checked again and is working.' : 'You will get another email when this is resolved.'}
+    ${esc(after)}
   </td></tr>`;
 
   const html = frame({
@@ -253,22 +287,30 @@ ${statusStrip(counts, ctx.openIssues || 0)}
     headline,
     intro,
     '',
-    ...sorted.flatMap((c) => [
-      `${c.kind === 'ok' ? 'RESOLVED' : c.kind === 'down' ? 'DOWN' : 'WARNING'} · ${c.serviceName}`,
-      `  ${c.kind === 'ok' ? 'Was' : 'Problem'}: ${clip(c.title, 300)}`,
-      c.service && c.service.purpose ? `  Affects: ${clip(c.service.purpose, 160)}` : '',
-      c.kind === 'ok'
-        ? `  Back since ${istDateTime(c.resolvedAt || now)} IST (lasted ${duration(c.openedAt, c.resolvedAt || now)})`
-        : `  Since ${istDateTime(c.openedAt)} IST${c.worse ? ' · got worse: now down' : ''}`,
-      '',
-    ]),
+    ...sorted.flatMap((c) => {
+      const at = c.resolvedAt || now;
+      const link = Object.entries((c.service && c.service.links) || {}).map(([t, u]) => [t, safeUrl(u)]).find(([, u]) => u);
+      return [
+        `${word(c)} · ${name(c)}`,
+        `  ${c.kind === 'ok' ? 'Was' : 'Problem'}: ${clip(c.title, 300)}`,
+        c.service && c.service.purpose ? `  Affects: ${clip(c.service.purpose, 160)}` : '',
+        c.kind !== 'ok' ? `  Since ${istDateTime(c.openedAt)} IST${c.worse ? ' · got worse: now down' : ''}`
+          : c.resolvedBy === 'manual' ? `  Marked resolved ${istDateTime(at)} IST on the dashboard (not re-checked) · lasted ${duration(c.openedAt, at)}${c.resolveNote ? `\n  Note: ${clip(c.resolveNote, 300)}` : ''}`
+            : c.resolvedBy === 'untracked' ? `  Closed ${istDateTime(at)} IST: no longer tracked · lasted ${duration(c.openedAt, at)}`
+              : `  Back since ${istDateTime(at)} IST (lasted ${duration(c.openedAt, at)})`,
+        c.kind !== 'ok' && c.source === 'report' ? '  Source: reported via the API, not confirmed by a check' : '',
+        link ? `  ${link[0]}: ${link[1]}` : '',
+        '',
+      ];
+    }),
     `Right now: ${counts.ok} OK, ${counts.warn} warning, ${counts.down} down, ${ctx.openIssues || 0} open issues`,
+    after,
     safeUrl(ctx.dashboardUrl) ? `Open APItracker: ${ctx.dashboardUrl}` : '',
     '',
     `MRPscan API Monitor · sent from ${ctx.from || 'info@mrpscan.com'}`,
   ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
 
-  return { subject, html, text, urgent: top === 'down' };
+  return { subject, html, text, urgent: confirmedDown };
 }
 
 // ---------- the daily report / test email ----------
@@ -303,8 +345,8 @@ function reportEmail({ rows, open, kind }, ctx) {
     return `
       <tr>
         <td valign="top" style="padding:10px 0 10px 16px;border-top:1px solid ${C.border};">
-          <div style="font-family:${SANS};font-size:14px;font-weight:800;color:${C.text};">${esc(r.name)}</div>
-          ${r.line ? `<div style="font-family:${SANS};font-size:12.5px;line-height:1.45;color:${r.status === 'ok' ? C.label : st.color};margin-top:2px;">${esc(clip(r.line, 200))}</div>` : ''}
+          <div style="font-family:${SANS};font-size:14px;font-weight:800;color:${C.text};${WRAP}">${esc(clip(r.name, 80))}</div>
+          ${r.line ? `<div style="font-family:${SANS};font-size:12.5px;line-height:1.45;color:${r.status === 'ok' ? C.label : st.color};margin-top:2px;${WRAP}">${esc(clip(r.line, 200))}</div>` : ''}
           ${r.balance || r.expiry ? `<div style="font-family:${SANS};font-size:12px;color:${C.label};margin-top:2px;">${esc([r.balance, r.expiry].filter(Boolean).join(' · '))}</div>` : ''}
         </td>
         <td valign="top" align="right" style="padding:10px 16px 10px 8px;border-top:1px solid ${C.border};">${pill(st.word, st.color, st.bg)}</td>
@@ -312,8 +354,8 @@ function reportEmail({ rows, open, kind }, ctx) {
   }).join('');
 
   const openRows = open.map((i) => `
-      <tr><td style="padding:6px 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.text};border-top:1px solid ${C.border};">
-        <b>${esc(i.serviceName)}</b> — ${esc(clip(i.title, 200))}<br><span style="color:${C.label};font-size:12px;">since ${esc(istDateTime(i.openedAt))} IST</span>
+      <tr><td style="padding:6px 0;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.text};border-top:1px solid ${C.border};${WRAP}">
+        <b>${esc(clip(i.serviceName, 80))}</b> — ${esc(clip(i.title, 200))}<br><span style="color:${C.label};font-size:12px;">since ${esc(istDateTime(i.openedAt))} IST</span>
       </td></tr>`).join('');
 
   const body = `
