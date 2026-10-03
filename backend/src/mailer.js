@@ -4,7 +4,7 @@
 // watched .env). The SMTP check signs in to it; email updates go out on it.
 
 function smtpConfig(env) {
-  const port = Number(env.SMTP_PORT || 465);
+  const port = Number(env.SMTP_PORT || 587);
   const secureText = String(env.SMTP_SECURE ?? '').trim().toLowerCase();
   return {
     host: String(env.SMTP_HOST || '').trim(),
@@ -30,6 +30,9 @@ function createTransport(cfg) {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
+    // On 587 the connection must upgrade with STARTTLS; never sign in or send
+    // over a plain connection.
+    requireTLS: !cfg.secure,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
