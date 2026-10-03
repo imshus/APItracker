@@ -1,21 +1,20 @@
 'use strict';
 
 // Follow-up emails, sent from a Gmail account (ALERT_GMAIL_USER + an App
-// Password) or else over the backend's SMTP account (see mailer.js):
+// Password) or else over the backend's SMTP account (see mailer.js), in
+// MRPscan's email look (emailTemplates.js):
 // - when an issue opens, gets worse (warning → down) or is resolved, one email
-//   per run that changed something;
-// - a daily summary at DAILY_SUMMARY_HOUR (IST) with every service's status,
+//   per run that changed something; "down" goes out as high priority;
+// - a daily report at DAILY_SUMMARY_HOUR (IST) with every service's status,
 //   balance and next expiry.
 // Off until ALERT_EMAIL_TO is set in the tracker's own .env.
 const { smtpConfig, createTransport, describeSmtpError, fromHeader } = require('./mailer');
+const { alertEmail, reportEmail } = require('./emailTemplates');
 
 const RANK = { ok: 0, warn: 1, down: 2 };
-const LEVEL = { warn: 'Warning', down: 'Down', ok: 'Resolved' };
-const STATUS = { ok: 'OK', warn: 'Warning', down: 'Down', off: 'Not set', pending: 'Not checked' };
 const TEST_GAP_MS = 10 * 60 * 1000;
 const SUMMARY_RETRY_MS = 30 * 60 * 1000;
-
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const SENDER_NAME = 'MRPscan API Monitor';
 
 function istNow(date = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -24,21 +23,10 @@ function istNow(date = new Date()) {
   return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) };
 }
 
-const when = (iso) => new Date(iso).toLocaleString('en-IN', {
-  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
-});
-
 function maskEmail(addr) {
   const [local, domain] = String(addr).split('@');
   if (!domain) return '••••';
   return `${local.slice(0, 2)}••••@${domain}`;
-}
-
-function duration(fromIso, toIso) {
-  const min = Math.max(1, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 60000));
-  if (min < 60) return `${min} min`;
-  if (min < 1440) return `${(min / 60).toFixed(min < 600 ? 1 : 0)} h`;
-  return `${(min / 1440).toFixed(1)} days`;
 }
 
 function amount(a, value) {
@@ -62,7 +50,7 @@ function balanceText(s) {
 }
 
 function expiryText(s) {
-  const e = s.expiries.filter((x) => !x.info).sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0];
+  const e = (s.expiries || []).filter((x) => !x.info).sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0];
   if (!e) return '';
   const date = new Date(e.at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
   return `${e.label}: ${date} (${e.daysLeft < 0 ? 'expired' : `in ${e.daysLeft} days`})`;
@@ -70,7 +58,8 @@ function expiryText(s) {
 
 class Notifier {
   // summary(): the dashboard overview (services with status, result, meta,
-  // expiries) — used for the daily email and the test email.
+  // expiries, purpose, links) — used to describe what each issue affects and
+  // for the daily report.
   constructor({ store, settings, readEnv, summary }) {
     this.store = store;
     this.settings = settings;
@@ -110,18 +99,34 @@ class Notifier {
     };
   }
 
-  async send(subject, text, html) {
+  // What every template needs to know about the moment it is sent.
+  context() {
+    const d = this.summary();
+    const cfg = this.sender();
+    return {
+      services: d.services || [],
+      openIssues: this.store.state.incidents.filter((i) => !i.resolvedAt).length,
+      dashboardUrl: this.settings.dashboardUrl,
+      from: String(cfg.from || '').replace(/^.*<|>.*$/g, ''),
+      now: new Date().toISOString(),
+    };
+  }
+
+  // mail: { subject, text, html, urgent }
+  async send(mail) {
     const cfg = this.sender();
     if (cfg.via === 'Gmail' && !cfg.pass) throw new Error('ALERT_GMAIL_APP_PASSWORD is not set in backend/.env');
     if (!cfg.host || !cfg.from) throw new Error('No sender: set ALERT_GMAIL_USER in backend/.env, or SMTP_HOST / SMTP_FROM in the watched .env');
     const transport = createTransport(cfg);
     try {
       await transport.sendMail({
-        from: fromHeader(cfg.from, 'APItracker'),
+        from: fromHeader(cfg.from, SENDER_NAME),
         to: this.settings.alertEmailTo.join(', '),
-        subject,
-        text,
-        html,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        // "API down" is flagged urgent in the inbox (X-Priority 1 / Importance: high).
+        ...(mail.urgent ? { priority: 'high' } : {}),
       });
     } finally {
       transport.close();
@@ -130,12 +135,12 @@ class Notifier {
 
   // Sends and remembers the outcome; never throws (a mail problem must not
   // break a check run).
-  async deliver(subject, text, html) {
+  async deliver(mail) {
     const rec = this.record;
     try {
-      await this.send(subject, text, html);
+      await this.send(mail);
       rec.lastSentAt = new Date().toISOString();
-      rec.lastSubject = subject;
+      rec.lastSubject = mail.subject;
       rec.lastError = null;
       return { ok: true };
     } catch (err) {
@@ -168,69 +173,48 @@ class Notifier {
     const opened = list.filter((i) => !i.resolvedAt && !before.has(i.id));
     const worse = list.filter((i) => !i.resolvedAt && before.has(i.id) && RANK[i.level] > RANK[before.get(i.id)]);
     const resolved = list.filter((i) => i.resolvedAt && before.has(i.id));
-    const changes = [
-      ...opened.map((i) => ({ i, kind: i.level, text: i.title, note: `opened ${when(i.openedAt)}` })),
-      ...worse.map((i) => ({ i, kind: i.level, text: i.title, note: `now ${LEVEL[i.level].toLowerCase()}, open since ${when(i.openedAt)}` })),
-      ...resolved.map((i) => ({ i, kind: 'ok', text: i.title, note: `resolved after ${duration(i.openedAt, i.resolvedAt)}` })),
-    ];
-    if (!changes.length) return;
+    if (!opened.length && !worse.length && !resolved.length) return;
 
-    const subject = changes.length === 1
-      ? `APItracker · ${LEVEL[changes[0].kind]}: ${changes[0].i.serviceName} — ${changes[0].text}`.slice(0, 180)
-      : `APItracker · ${[
-        opened.length && `${opened.length} new issue${opened.length === 1 ? '' : 's'}`,
-        worse.length && `${worse.length} got worse`,
-        resolved.length && `${resolved.length} resolved`,
-      ].filter(Boolean).join(', ')}`;
-    const url = this.settings.dashboardUrl;
-    const text = [
-      ...changes.map((c) => `${LEVEL[c.kind].toUpperCase()} · ${c.i.serviceName}: ${c.text} (${c.note})`),
-      '',
-      `Open issues now: ${list.filter((i) => !i.resolvedAt).length}`,
-      `Dashboard: ${url}`,
-    ].join('\n');
-    const colour = { warn: '#8a6100', down: '#a81f17', ok: '#1a7a42' };
-    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#15120d">
-      ${changes.map((c) => `<p style="margin:0 0 10px"><b style="color:${colour[c.kind]}">${LEVEL[c.kind]}</b> · <b>${esc(c.i.serviceName)}</b><br>${esc(c.text)}<br><span style="color:#857a63">${esc(c.note)}</span></p>`).join('')}
-      <p style="color:#857a63">Open issues now: ${list.filter((i) => !i.resolvedAt).length} · <a href="${esc(url)}">Open APItracker</a></p></div>`;
-    await this.deliver(subject, text, html);
+    const ctx = this.context();
+    const service = (i) => {
+      const s = ctx.services.find((x) => x.id === i.serviceId);
+      return s ? { purpose: s.purpose, links: s.links } : null;
+    };
+    const change = (i, kind, extra = {}) => ({
+      kind,
+      serviceName: i.serviceName,
+      title: i.title,
+      openedAt: i.openedAt,
+      resolvedAt: i.resolvedAt,
+      source: i.source,
+      service: service(i),
+      ...extra,
+    });
+    const changes = [
+      ...opened.map((i) => change(i, i.level === 'down' ? 'down' : 'warn')),
+      ...worse.map((i) => change(i, i.level === 'down' ? 'down' : 'warn', { worse: true })),
+      ...resolved.map((i) => change(i, 'ok')),
+    ];
+    await this.deliver(alertEmail(changes, ctx));
   }
 
-  summaryMail(title) {
-    const d = this.summary();
+  reportMail(kind) {
+    const ctx = this.context();
     const order = { down: 0, warn: 1, pending: 2, off: 3, ok: 4 };
-    const services = d.services.slice().sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5) || a.name.localeCompare(b.name));
-    const count = (st) => services.filter((s) => s.status === st).length;
-    const headline = count('down') ? `${count('down')} down`
-      : count('warn') ? `${count('warn')} need attention`
-        : count('ok') ? 'All good' : 'Nothing checked yet';
-    const lines = services.map((s) => {
-      const bits = [balanceText(s), expiryText(s)].filter(Boolean).join(' · ');
-      const what = s.problems[0]?.message || s.result?.summary || '';
-      return { s, what, bits };
-    });
-    const open = this.store.state.incidents.filter((i) => !i.resolvedAt);
-    const url = this.settings.dashboardUrl;
-    const subject = `APItracker ${title} · ${headline}`;
-    const text = [
-      `${headline} — ${count('ok')} OK, ${count('warn')} warning, ${count('down')} down`,
-      '',
-      ...lines.map(({ s, what, bits }) => `${STATUS[s.status] || s.status} · ${s.name}: ${what}${bits ? ` [${bits}]` : ''}`),
-      '',
-      `Open issues: ${open.length}`,
-      ...open.map((i) => `- ${i.serviceName}: ${i.title} (since ${when(i.openedAt)})`),
-      '',
-      `Dashboard: ${url}`,
-    ].join('\n');
-    const colour = { ok: '#1a7a42', warn: '#8a6100', down: '#a81f17' };
-    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#15120d">
-      <h2 style="font-size:18px;margin:0 0 4px">${esc(headline)}</h2>
-      <p style="color:#857a63;margin:0 0 12px">${count('ok')} OK · ${count('warn')} warning · ${count('down')} down · ${open.length} open issue${open.length === 1 ? '' : 's'}</p>
-      <table cellpadding="6" style="border-collapse:collapse;font-size:13px">
-        ${lines.map(({ s, what, bits }) => `<tr style="border-top:1px solid #e9ddc4"><td style="color:${colour[s.status] || '#857a63'};font-weight:bold;white-space:nowrap">${esc(STATUS[s.status] || s.status)}</td><td><b>${esc(s.name)}</b><br>${esc(what)}${bits ? `<br><span style="color:#857a63">${esc(bits)}</span>` : ''}</td></tr>`).join('')}
-      </table>
-      <p><a href="${esc(url)}">Open APItracker</a></p></div>`;
-    return { subject, text, html };
+    const rows = ctx.services
+      .slice()
+      .sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5) || a.name.localeCompare(b.name))
+      .map((s) => ({
+        name: s.name,
+        status: s.status,
+        line: (s.problems && s.problems[0] && s.problems[0].message) || (s.result && s.result.summary) || '',
+        balance: balanceText(s),
+        expiry: expiryText(s),
+      }));
+    const open = this.store.state.incidents
+      .filter((i) => !i.resolvedAt)
+      .map((i) => ({ serviceName: i.serviceName, title: i.title, openedAt: i.openedAt }));
+    return reportEmail({ rows, open, kind }, ctx);
   }
 
   // Called every few minutes; sends once a day after the set IST hour.
@@ -242,8 +226,7 @@ class Notifier {
     if (now.hour < hour || rec.lastSummaryDay === now.day) return;
     if (rec.lastSummaryTry && Date.now() - Date.parse(rec.lastSummaryTry) < SUMMARY_RETRY_MS) return;
     rec.lastSummaryTry = new Date().toISOString();
-    const mail = this.summaryMail('daily summary');
-    const out = await this.deliver(mail.subject, mail.text, mail.html);
+    const out = await this.deliver(this.reportMail('daily'));
     if (out.ok) {
       rec.lastSummaryDay = now.day;
       this.store.save();
@@ -259,8 +242,7 @@ class Notifier {
       return { ok: false, error: 'A test email was sent in the last 10 minutes' };
     }
     rec.lastTestAt = new Date().toISOString();
-    const mail = this.summaryMail('test update');
-    return this.deliver(mail.subject, mail.text, mail.html);
+    return this.deliver(this.reportMail('test'));
   }
 }
 
