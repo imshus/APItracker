@@ -84,15 +84,6 @@ const SERVICES = [
     meta: {}, uptime7d: 100, hist: () => 'ok',
   },
   {
-    id: 'metals', name: 'metals.dev', category: 'Market data', purpose: 'MCX gold rate fallback for the rate scheduler', status: 'ok',
-    links: { Dashboard: 'https://metals.dev/dashboard' },
-    result: result({
-      summary: 'Key valid', ms: 190, keys: [key('METALS_DEV_API_KEY', 'MDK…41fc')],
-      available: { label: 'Requests left this month', value: 1640, total: 2000, unit: 'requests', money: null },
-    }),
-    meta: {}, uptime7d: 100, hist: () => 'ok',
-  },
-  {
     id: 'mongodb', name: 'MongoDB Atlas', category: 'Databases', purpose: 'Main database (users, scans, invoices, payments)', status: 'ok',
     links: { Atlas: 'https://cloud.mongodb.com' },
     result: result({
@@ -145,10 +136,6 @@ const incidents = [
   { id: 'inc_rep1', source: 'report', serviceId: 'razorpay', serviceName: 'Razorpay', level: 'warn', peak: 'warn', title: 'Webhook retried 3 times for order_Qk8sX1',
     problems: [], error: null, openedAt: ago(9 * 3600000), lastSeenAt: ago(8 * 3600000), resolvedAt: null, count: 3,
     log: [{ t: ago(9 * 3600000), level: 'warn', message: 'Webhook retried 3 times for order_Qk8sX1' }] },
-  { id: 'inc_old1', source: 'check', serviceId: 'metals', serviceName: 'metals.dev', level: 'down', peak: 'down', title: 'metals.dev: HTTP 503',
-    problems: [{ level: 'down', message: 'metals.dev: HTTP 503' }], error: { httpStatus: 503, code: null, message: 'Service Unavailable', body: 'Service Unavailable' },
-    openedAt: ago(4 * DAY), lastSeenAt: ago(4 * DAY - 40 * 60000), resolvedAt: ago(4 * DAY - 45 * 60000), count: 2,
-    log: [{ t: ago(4 * DAY), level: 'down', message: 'metals.dev: HTTP 503' }, { t: ago(4 * DAY - 45 * 60000), level: 'ok', message: 'Recovered' }] },
   { id: 'inc_old2', source: 'check', serviceId: 'url-pratham-ai', serviceName: 'Pratham AI', level: 'warn', peak: 'warn', title: 'Slow response: 3,100 ms',
     problems: [{ level: 'warn', message: 'Slow response: 3,100 ms' }], error: null,
     openedAt: ago(6 * DAY), lastSeenAt: ago(6 * DAY - 30 * 60000), resolvedAt: ago(6 * DAY - 70 * 60000), count: 1,

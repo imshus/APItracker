@@ -9,7 +9,6 @@ const FIXED = [
   require('./checks/smtp'),
   require('./checks/sandbox'),
   require('./checks/pdfmonkey'),
-  require('./checks/metals'),
   require('./checks/mongodb'),
   require('./checks/redis'),
   require('./checks/secrets'),

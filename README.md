@@ -33,7 +33,6 @@ Open http://localhost:4300. Checks run on start and every `CHECK_INTERVAL_MINUTE
 | SMTP email | sign-in to `SMTP_HOST` with `SMTP_USER`/`SMTP_PASS` (nothing is sent) | invoice email account works, `SMTP_FROM` set |
 | Sandbox GST | `POST /authenticate` | keys valid, access-token expiry |
 | PDFMonkey | `GET /current_user`, both templates | documents left, plan, trial end, templates exist |
-| metals.dev | `GET /usage` (does not use quota) | requests left this month |
 | MongoDB Atlas | ping + dbStats | reachable, size, documents |
 | Redis | PING + INFO | reachable, keys, memory |
 | Server secrets | local only | JWT / e-invoice key present and strong |
